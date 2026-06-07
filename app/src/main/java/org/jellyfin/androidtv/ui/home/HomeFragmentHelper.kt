@@ -8,11 +8,14 @@ import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.ui.browsing.BrowseRowDef
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.MediaType
+import org.jellyfin.sdk.model.api.request.GetItemsRequest
 import org.jellyfin.sdk.model.api.request.GetNextUpRequest
 import org.jellyfin.sdk.model.api.request.GetRecommendedProgramsRequest
 import org.jellyfin.sdk.model.api.request.GetRecordingsRequest
 import org.jellyfin.sdk.model.api.request.GetResumeItemsRequest
+import java.util.UUID
 
 class HomeFragmentHelper(
 	private val context: Context,
@@ -76,11 +79,24 @@ class HomeFragmentHelper(
 		return HomeFragmentBrowseRowDefRow(BrowseRowDef(context.getString(R.string.lbl_on_now), query))
 	}
 
+	fun loadCollectionRow(name: String, collectionId: UUID): HomeFragmentRow {
+		val query = GetItemsRequest(
+			parentId = collectionId,
+			fields = ItemRepository.browseFields,
+			sortBy = setOf(ItemSortBy.SORT_NAME),
+			imageTypeLimit = 1,
+			limit = ITEM_LIMIT_COLLECTION,
+		)
+
+		return HomeFragmentBrowseRowDefRow(BrowseRowDef(name, query, ITEM_LIMIT_COLLECTION))
+	}
+
 	companion object {
 		// Maximum amount of items loaded for a row
 		private const val ITEM_LIMIT_RESUME = 50
 		private const val ITEM_LIMIT_RECORDINGS = 40
 		private const val ITEM_LIMIT_NEXT_UP = 50
 		private const val ITEM_LIMIT_ON_NOW = 20
+		private const val ITEM_LIMIT_COLLECTION = 60
 	}
 }

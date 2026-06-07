@@ -49,7 +49,10 @@ import org.jellyfin.androidtv.ui.presentation.PositionableListRowPresenter
 import org.jellyfin.androidtv.util.KeyProcessor
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.api.sockets.subscribe
+import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.jellyfin.sdk.model.api.UserDataChangedMessage
 import org.koin.android.ext.android.inject
@@ -139,6 +142,27 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						val previousRow = rowsAdapter.get(i - 1)
 						if (previousRow != null) itemAdapter.setSiblingRow(previousRow)
 					}
+				}
+			}
+
+			// Themed collection rows: loaded separately and appended after the standard
+			// home renders, so the initial home isn't blocked by the (slow) collection
+			// lookup. Skips the auto-generated "... Collection" franchise box sets.
+			val collections = runCatching {
+				api.itemsApi.getItems(
+					includeItemTypes = setOf(BaseItemKind.BOX_SET),
+					recursive = true,
+					sortBy = setOf(ItemSortBy.SORT_NAME),
+				).content.items.orEmpty()
+			}.getOrDefault(emptyList())
+				.filter { !it.name.orEmpty().endsWith(" Collection") }
+
+			withContext(Dispatchers.Main) {
+				val cardPresenter = CardPresenter()
+				for (collection in collections) {
+					val name = collection.name ?: continue
+					helper.loadCollectionRow(name, collection.id)
+						.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
 				}
 			}
 		}
