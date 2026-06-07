@@ -81,7 +81,7 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 	Box(
 		modifier = modifier
 			.fillMaxWidth()
-			.height(155.dp)
+			.height(120.dp)
 			.clipToBounds()
 	) {
 		Crossfade(
