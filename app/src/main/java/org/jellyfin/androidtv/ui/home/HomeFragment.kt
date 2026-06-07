@@ -51,6 +51,8 @@ class HomeFragment : Fragment() {
 			Column {
 				MainToolbar(MainToolbarActiveButton.Home)
 
+					HomeHeroCarousel()
+
 				// The leanback code has its own awful focus handling that doesn't work properly with Compose view inteop to workaround this
 				// issue we add custom behavior that only allows focus exit when the current selected row is the first one. Additionally when
 				// we do switch the focus, we reset the leanback state so it won't cause weird behavior when focus is regained
