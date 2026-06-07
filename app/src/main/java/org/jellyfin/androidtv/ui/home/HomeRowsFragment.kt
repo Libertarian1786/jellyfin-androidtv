@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.home
 
+import android.content.Context
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -52,11 +53,14 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.api.sockets.subscribe
 import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.CollectionType
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.jellyfin.sdk.model.api.UserDataChangedMessage
+import org.jellyfin.sdk.model.api.request.GetItemsRequest
 import org.koin.android.ext.android.inject
 import timber.log.Timber
+import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyListener {
@@ -145,26 +149,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 			}
 
-			// Themed collection rows: loaded separately and appended after the standard
-			// home renders, so the initial home isn't blocked by the (slow) collection
-			// lookup. Skips the auto-generated "... Collection" franchise box sets.
-			val collections = runCatching {
-				api.itemsApi.getItems(
-					includeItemTypes = setOf(BaseItemKind.BOX_SET),
-					recursive = true,
-					sortBy = setOf(ItemSortBy.SORT_NAME),
-				).content.items.orEmpty()
-			}.getOrDefault(emptyList())
-				.filter { !it.name.orEmpty().endsWith(" Collection") }
-
-			withContext(Dispatchers.Main) {
-				val cardPresenter = CardPresenter()
-				for (collection in collections) {
-					val name = collection.name ?: continue
-					helper.loadCollectionRow(name, collection.id)
-						.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
-				}
-			}
+			// Themed collection rows: shown instantly from a cached list, then refreshed
+			// from the Collections library in the background.
+			addThemedCollectionRows()
 		}
 
 		onItemViewClickedListener = CompositeClickedListener().apply {
@@ -200,6 +187,69 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		// Subscribe to Audio messages
 		mediaManager.addAudioEventListener(this)
+	}
+
+	/**
+	 * Adds a home row for each of the user's curated collections. The list is cached
+	 * so repeat launches render instantly while a fresh copy loads in the background.
+	 */
+	private suspend fun addThemedCollectionRows() {
+		val prefs = requireContext().getSharedPreferences("jellyfintv_home_cache", Context.MODE_PRIVATE)
+
+		val cached = prefs.getString("themed_collections", null)
+			?.lineSequence()
+			?.mapNotNull { line ->
+				val parts = line.split('\t', limit = 2)
+				if (parts.size != 2) return@mapNotNull null
+				val id = runCatching { UUID.fromString(parts[0]) }.getOrNull() ?: return@mapNotNull null
+				id to parts[1]
+			}
+			?.toList()
+			.orEmpty()
+
+		if (cached.isNotEmpty()) withContext(Dispatchers.Main) { addCollectionRowsToAdapter(cached) }
+
+		// Refresh from the Collections library directly (faster than a recursive scan)
+		// and skip the auto-generated "... Collection" franchise box sets.
+		val fresh = runCatching {
+			val collectionsView = userViewsRepository.views.first()
+				.firstOrNull { it.collectionType == CollectionType.BOXSETS }
+			val request = if (collectionsView != null) {
+				GetItemsRequest(
+					parentId = collectionsView.id,
+					sortBy = setOf(ItemSortBy.SORT_NAME),
+					enableTotalRecordCount = false,
+				)
+			} else {
+				GetItemsRequest(
+					includeItemTypes = setOf(BaseItemKind.BOX_SET),
+					recursive = true,
+					sortBy = setOf(ItemSortBy.SORT_NAME),
+					enableTotalRecordCount = false,
+				)
+			}
+			api.itemsApi.getItems(request).content.items.orEmpty()
+		}.getOrDefault(emptyList())
+			.mapNotNull { item ->
+				val name = item.name ?: return@mapNotNull null
+				if (name.endsWith(" Collection")) null else item.id to name
+			}
+
+		if (fresh.isNotEmpty()) {
+			prefs.edit()
+				.putString("themed_collections", fresh.joinToString("\n") { "${it.first}\t${it.second}" })
+				.apply()
+			if (cached.isEmpty()) withContext(Dispatchers.Main) { addCollectionRowsToAdapter(fresh) }
+		}
+	}
+
+	private fun addCollectionRowsToAdapter(collections: List<Pair<UUID, String>>) {
+		val cardPresenter = CardPresenter()
+		@Suppress("UNCHECKED_CAST")
+		val rowsAdapter = adapter as MutableObjectAdapter<Row>
+		for ((id, name) in collections) {
+			helper.loadCollectionRow(name, id).addToRowsAdapter(requireContext(), cardPresenter, rowsAdapter)
+		}
 	}
 
 	override fun onKey(v: View?, keyCode: Int, event: KeyEvent?): Boolean {
