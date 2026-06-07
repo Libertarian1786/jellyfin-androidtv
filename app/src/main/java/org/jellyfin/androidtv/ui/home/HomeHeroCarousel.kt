@@ -1,6 +1,8 @@
 package org.jellyfin.androidtv.ui.home
 
 import android.widget.ImageView
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -73,51 +76,65 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 		}
 	}
 
-	val item = items.getOrNull(index) ?: return
-	val backdrop = item.itemBackdropImages.firstOrNull()
-	val logo = item.itemImages[ImageType.LOGO]
+	val current = items.getOrNull(index) ?: return
 
-	Box(modifier = modifier.fillMaxWidth().height(220.dp)) {
-		AsyncImage(
-			url = backdrop?.getUrl(api),
-			blurHash = backdrop?.blurHash,
-			scaleType = ImageView.ScaleType.CENTER_CROP,
-			modifier = Modifier.fillMaxSize(),
-		)
+	Box(
+		modifier = modifier
+			.fillMaxWidth()
+			.height(220.dp)
+			.clipToBounds()
+	) {
+		Crossfade(
+			targetState = current,
+			animationSpec = tween(durationMillis = 800),
+			label = "hero",
+		) { item ->
+			val backdrop = item.itemBackdropImages.firstOrNull()
+			val logo = item.itemImages[ImageType.LOGO]
 
-		// Darken the bottom edge for legibility of the title.
-		Box(
-			modifier = Modifier
-				.fillMaxSize()
-				.background(
-					Brush.verticalGradient(
-						0.45f to Color.Transparent,
-						1f to Color.Black.copy(alpha = 0.9f),
-					)
-				)
-		)
-
-		Column(
-			modifier = Modifier
-				.align(Alignment.BottomStart)
-				.padding(start = 48.dp, end = 48.dp, bottom = 28.dp)
-		) {
-			if (logo != null) {
+			Box(modifier = Modifier.fillMaxSize()) {
 				AsyncImage(
-					url = logo.getUrl(api),
-					blurHash = logo.blurHash,
-					scaleType = ImageView.ScaleType.FIT_START,
-					modifier = Modifier.height(80.dp),
+					url = backdrop?.getUrl(api),
+					blurHash = backdrop?.blurHash,
+					scaleType = ImageView.ScaleType.CENTER_CROP,
+					modifier = Modifier.fillMaxSize(),
 				)
-			} else {
-				Text(
-					text = item.name.orEmpty(),
-					style = TextStyle(
-						color = Color.White,
-						fontSize = 36.sp,
-						fontWeight = FontWeight.Bold,
-					),
+
+				// Darken the bottom edge for legibility of the title.
+				Box(
+					modifier = Modifier
+						.fillMaxSize()
+						.background(
+							Brush.verticalGradient(
+								0.45f to Color.Transparent,
+								1f to Color.Black.copy(alpha = 0.9f),
+							)
+						)
 				)
+
+				Column(
+					modifier = Modifier
+						.align(Alignment.BottomStart)
+						.padding(start = 48.dp, end = 48.dp, bottom = 28.dp)
+				) {
+					if (logo != null) {
+						AsyncImage(
+							url = logo.getUrl(api),
+							blurHash = logo.blurHash,
+							scaleType = ImageView.ScaleType.FIT_START,
+							modifier = Modifier.height(80.dp),
+						)
+					} else {
+						Text(
+							text = item.name.orEmpty(),
+							style = TextStyle(
+								color = Color.White,
+								fontSize = 36.sp,
+								fontWeight = FontWeight.Bold,
+							),
+						)
+					}
+				}
 			}
 		}
 	}
