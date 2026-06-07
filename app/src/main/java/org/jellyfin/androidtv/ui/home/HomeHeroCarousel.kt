@@ -81,7 +81,7 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 	Box(
 		modifier = modifier
 			.fillMaxWidth()
-			.height(120.dp)
+			.height(95.dp)
 			.clipToBounds()
 	) {
 		Crossfade(
@@ -122,7 +122,7 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 							url = logo.getUrl(api),
 							blurHash = logo.blurHash,
 							scaleType = ImageView.ScaleType.FIT_START,
-							modifier = Modifier.height(80.dp),
+							modifier = Modifier.height(52.dp),
 						)
 					} else {
 						Text(
