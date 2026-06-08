@@ -79,10 +79,7 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 	val current = items.getOrNull(index) ?: return
 
 	Box(
-		modifier = modifier
-			.fillMaxWidth()
-			.height(95.dp)
-			.clipToBounds()
+		modifier = modifier.clipToBounds()
 	) {
 		Crossfade(
 			targetState = current,
@@ -100,13 +97,15 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 					modifier = Modifier.fillMaxSize(),
 				)
 
-				// Darken the bottom edge for legibility of the title.
+				// Darken the top (under the floating toolbar) and bottom (under the title).
 				Box(
 					modifier = Modifier
 						.fillMaxSize()
 						.background(
 							Brush.verticalGradient(
+								0f to Color.Black.copy(alpha = 0.65f),
 								0.45f to Color.Transparent,
+								0.65f to Color.Transparent,
 								1f to Color.Black.copy(alpha = 0.9f),
 							)
 						)
