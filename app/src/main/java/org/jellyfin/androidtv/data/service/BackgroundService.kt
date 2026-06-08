@@ -51,14 +51,22 @@ class BackgroundService(
 	private var _currentBackground = MutableStateFlow<ImageBitmap?>(null)
 	private var _blurBackground = MutableStateFlow(false)
 	private var _enabled = MutableStateFlow(true)
+	private val _currentItem = MutableStateFlow<BaseItemDto?>(null)
 	val currentBackground get() = _currentBackground.asStateFlow()
 	val blurBackground get() = _blurBackground.asStateFlow()
 	val enabled get() = _enabled.asStateFlow()
+
+	/** The most recently focused item, mirrored by the home hero banner. */
+	val currentItem get() = _currentItem.asStateFlow()
 
 	/**
 	 * Use all available backdrops from [baseItem] as background.
 	 */
 	fun setBackground(baseItem: BaseItemDto?) {
+		// Track the focused item so the home hero can mirror it (independent of the
+		// blurred-backdrop preference below).
+		if (baseItem != null) _currentItem.value = baseItem
+
 		// Check if item is set and backgrounds are enabled
 		if (baseItem == null || !userPreferences[UserPreferences.backdropEnabled])
 			return clearBackgrounds()
