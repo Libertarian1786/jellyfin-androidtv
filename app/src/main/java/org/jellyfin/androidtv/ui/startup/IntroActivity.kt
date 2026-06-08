@@ -41,6 +41,18 @@ class IntroActivity : Activity() {
 		videoView.setVideoURI(uri)
 		videoView.setOnPreparedListener { player ->
 			player.isLooping = false
+			// Scale the video to COVER the whole screen (center-crop) so there are no
+			// black letterbox/pillarbox bars when its aspect ratio differs from the TV.
+			val vw = player.videoWidth
+			val vh = player.videoHeight
+			if (vw > 0 && vh > 0) {
+				val metrics = resources.displayMetrics
+				val scale = maxOf(metrics.widthPixels.toFloat() / vw, metrics.heightPixels.toFloat() / vh)
+				videoView.layoutParams = FrameLayout.LayoutParams(
+					(vw * scale).toInt(),
+					(vh * scale).toInt(),
+				).apply { gravity = Gravity.CENTER }
+			}
 			videoView.start()
 		}
 		videoView.setOnCompletionListener { proceed() }
