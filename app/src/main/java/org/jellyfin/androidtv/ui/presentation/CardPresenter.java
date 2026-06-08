@@ -155,8 +155,10 @@ public class CardPresenter extends Presenter {
                                     }
                                 }
                                 showProgress = true;
-                                //Always show info for episodes
-                                mCardView.setCardType(BaseCardView.CARD_TYPE_INFO_UNDER);
+                                //Show info for episodes only when the presenter wants it (home rows pass showInfo=false)
+                                if (mShowInfo) {
+                                    mCardView.setCardType(BaseCardView.CARD_TYPE_INFO_UNDER);
+                                }
                             }
                             break;
                         case COLLECTION_FOLDER:
@@ -342,7 +344,10 @@ public class CardPresenter extends Presenter {
         BaseRowItem rowItem = (BaseRowItem) item;
 
         ViewHolder holder = (ViewHolder) viewHolder;
-        holder.setItem(rowItem, mImageType, 130, 150, mStaticHeight);
+        // Cap the non-static (aspect-based) heights by mStaticHeight so a compact home
+        // presenter (e.g. CardPresenter(false, 96)) shrinks every row uniformly, while
+        // default presenters (mStaticHeight=150) keep their original 130/150 sizes.
+        holder.setItem(rowItem, mImageType, Math.min(130, mStaticHeight), Math.min(150, mStaticHeight), mStaticHeight);
 
         holder.mCardView.setTitleText(rowItem.getCardName(holder.mCardView.getContext()));
         holder.mCardView.setContentText(rowItem.getSubText(holder.mCardView.getContext()));

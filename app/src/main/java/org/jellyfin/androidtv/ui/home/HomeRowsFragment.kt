@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import androidx.leanback.app.RowsSupportFragment
+import androidx.leanback.widget.BaseGridView
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.leanback.widget.OnItemViewSelectedListener
@@ -130,7 +131,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Add sections to layout
 			withContext(Dispatchers.Main) {
-				val cardPresenter = CardPresenter()
+				val cardPresenter = CardPresenter(false, 96)
 
 				// Add rows in order
 				notificationsRow.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
@@ -194,6 +195,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		super.onViewCreated(view, savedInstanceState)
 		// Pack the rows closer together so more fit on screen below the hero.
 		verticalGridView?.setItemSpacing(0)
+		// Pin the focused row near the top so the row above doesn't peek into view.
+		verticalGridView?.windowAlignment = BaseGridView.WINDOW_ALIGN_LOW_EDGE
+		verticalGridView?.windowAlignmentOffsetPercent = 5f
+		verticalGridView?.setItemAlignmentOffsetPercent(0f)
 		// Keep the rows transparent so the full-screen backdrop shows through behind them.
 		view.background = null
 		verticalGridView?.background = null
@@ -254,7 +259,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	private fun addCollectionRowsToAdapter(collections: List<Pair<UUID, String>>) {
-		val cardPresenter = CardPresenter()
+		val cardPresenter = CardPresenter(false, 96)
 		@Suppress("UNCHECKED_CAST")
 		val rowsAdapter = adapter as MutableObjectAdapter<Row>
 		for ((id, name) in collections) {
