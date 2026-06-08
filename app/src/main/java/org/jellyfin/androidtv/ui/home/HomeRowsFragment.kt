@@ -102,31 +102,21 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				userRepository.currentUser.filterNotNull().first()
 			}
 
-			// Start out with default sections
-			val homesections = userSettingPreferences.activeHomesections
-
 			// Make sure the rows are empty
 			val rows = mutableListOf<HomeFragmentRow>()
 
 			// Check for coroutine cancellation
 			if (!isActive) return@launch
 
-			// Actually add the sections
-			for (section in homesections) when (section) {
-				HomeSectionType.LATEST_MEDIA -> rows.add(helper.loadRecentlyAdded(userViewsRepository.views.first()))
-				HomeSectionType.LIBRARY_TILES_SMALL -> rows.add(HomeFragmentViewsRow(small = true))
-				HomeSectionType.LIBRARY_BUTTONS -> rows.add(HomeFragmentViewsRow(small = true))
-				HomeSectionType.RESUME -> rows.add(helper.loadResumeVideo())
-				HomeSectionType.RESUME_AUDIO -> rows.add(helper.loadResumeAudio())
-				HomeSectionType.RESUME_BOOK -> Unit // Books are not (yet) supported
-				HomeSectionType.ACTIVE_RECORDINGS -> rows.add(helper.loadLatestLiveTvRecordings())
-				HomeSectionType.NEXT_UP -> rows.add(helper.loadNextUp())
-				HomeSectionType.LIVE_TV -> if (currentUser.policy?.enableLiveTvAccess == true) {
-					rows.add(liveTVRow)
-					rows.add(helper.loadOnNow())
-				}
-
-				HomeSectionType.NONE -> Unit
+			// Curated home order. Recently Added (LATEST_MEDIA) is intentionally NOT added
+			// here — it is appended at the very bottom, below the themed collection rows.
+			rows.add(helper.loadResumeVideo())            // Continue Watching
+			rows.add(helper.loadNextUp())                 // Next Up
+			rows.add(HomeFragmentViewsRow(small = true))  // My media (library shortcuts)
+			rows.add(helper.loadResumeAudio())            // Continue Listening (hidden when empty)
+			if (currentUser.policy?.enableLiveTvAccess == true) {
+				rows.add(liveTVRow)
+				rows.add(helper.loadOnNow())
 			}
 
 			// Add sections to layout
@@ -154,6 +144,19 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// Themed collection rows: shown instantly from a cached list, then refreshed
 			// from the Collections library in the background.
 			addThemedCollectionRows()
+
+			// Recently Added ("Just added" for Movies + Shows) goes at the very bottom,
+			// below the themed rows.
+			if (isActive) {
+				val recentlyAdded = helper.loadRecentlyAdded(userViewsRepository.views.first())
+				withContext(Dispatchers.Main) {
+					recentlyAdded.addToRowsAdapter(
+						requireContext(),
+						CardPresenter(true, 114),
+						adapter as MutableObjectAdapter<Row>,
+					)
+				}
+			}
 		}
 
 		onItemViewClickedListener = CompositeClickedListener().apply {
