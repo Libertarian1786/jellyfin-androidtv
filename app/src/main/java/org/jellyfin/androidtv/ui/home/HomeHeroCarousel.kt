@@ -103,8 +103,8 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 						.fillMaxSize()
 						.background(
 							Brush.verticalGradient(
-								0f to Color.Black.copy(alpha = 0.65f),
-								0.45f to Color.Transparent,
+								0f to Color.Black.copy(alpha = 0.85f),
+								0.5f to Color.Transparent,
 								0.65f to Color.Transparent,
 								1f to Color.Black.copy(alpha = 0.9f),
 							)

@@ -59,7 +59,7 @@ class UserViewCardPresenter(
 	}
 
 	override fun onCreateViewHolder(parent: ViewGroup): ViewHolder {
-		val cardView = LegacyImageCardView(parent.context, true)
+		val cardView = LegacyImageCardView(parent.context, false)
 		cardView.isFocusable = true
 		cardView.isFocusableInTouchMode = true
 

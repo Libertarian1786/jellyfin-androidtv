@@ -93,7 +93,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
 
-		adapter = MutableObjectAdapter<Row>(PositionableListRowPresenter())
+		val rowTopPadding = (6 * resources.displayMetrics.density).toInt()
+		adapter = MutableObjectAdapter<Row>(PositionableListRowPresenter(rowTopPadding))
 
 		lifecycleScope.launch(Dispatchers.IO) {
 			val currentUser = withTimeout(30.seconds) {
