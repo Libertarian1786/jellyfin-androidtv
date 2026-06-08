@@ -61,6 +61,7 @@ import org.jellyfin.sdk.model.api.UserDataChangedMessage
 import org.jellyfin.sdk.model.api.request.GetItemsRequest
 import org.koin.android.ext.android.inject
 import timber.log.Timber
+import java.time.LocalDate
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
@@ -265,7 +266,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val cardPresenter = CardPresenter(true, 114)
 		@Suppress("UNCHECKED_CAST")
 		val rowsAdapter = adapter as MutableObjectAdapter<Row>
-		for ((id, name) in collections) {
+		// Rotate the (alphabetical) list by a date-based offset so a different set of
+		// collections leads each day, cycling through all of them over time. Stable
+		// within a day so navigating doesn't reshuffle the rows under you.
+		val ordered = if (collections.size > 1) {
+			val offset = (LocalDate.now().toEpochDay() % collections.size).toInt()
+			collections.drop(offset) + collections.take(offset)
+		} else {
+			collections
+		}
+		for ((id, name) in ordered) {
 			helper.loadCollectionRow(name, id).addToRowsAdapter(requireContext(), cardPresenter, rowsAdapter)
 		}
 	}
