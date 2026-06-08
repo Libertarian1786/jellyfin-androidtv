@@ -69,6 +69,11 @@ android {
 		}
 
 		debug {
+			// Run optimized (non-debuggable) so ART can ahead-of-time compile it for
+			// release-level speed, while keeping the ".debug" application id (installs
+			// in place, login preserved, no clash with the official app).
+			isDebuggable = false
+
 			// Use different application id to run release and debug at the same time
 			applicationIdSuffix = ".debug"
 
