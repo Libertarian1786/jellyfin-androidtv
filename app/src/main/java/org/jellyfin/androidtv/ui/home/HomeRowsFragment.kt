@@ -32,7 +32,9 @@ import org.jellyfin.androidtv.constant.HomeSectionType
 import org.jellyfin.androidtv.constant.QueryType
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.CustomMessageRepository
+import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
+import org.jellyfin.androidtv.data.repository.RecommendationsRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.preference.UserSettingPreferences
@@ -74,6 +76,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val userRepository by inject<UserRepository>()
 	private val userSettingPreferences by inject<UserSettingPreferences>()
 	private val userViewsRepository by inject<UserViewsRepository>()
+	private val recoRepo by lazy { RecommendationsRepository(api) }
 	private val dataRefreshService by inject<DataRefreshService>()
 	private val customMessageRepository by inject<CustomMessageRepository>()
 	private val navigationRepository by inject<NavigationRepository>()
@@ -113,6 +116,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// here — it is appended at the very bottom, below the themed collection rows.
 			rows.add(helper.loadResumeVideo())            // Continue Watching
 			rows.add(helper.loadNextUp())                 // Next Up
+
+			// Suggested for You — rendered instantly from the cached recommender output.
+			// The cache is refreshed in the background further below.
+			val suggestionItems = recoRepo.fetchItemsByIds(recoRepo.readCachedIds(requireContext()))
+			if (suggestionItems.isNotEmpty()) {
+				rows.add(HomeFragmentSuggestionsRow(requireContext().getString(R.string.suggested_for_you), suggestionItems))
+			}
+
 			rows.add(HomeFragmentViewsRow(small = true))  // My media (library shortcuts)
 			rows.add(helper.loadResumeAudio())            // Continue Listening (hidden when empty)
 			if (currentUser.policy?.enableLiveTvAccess == true) {
@@ -158,6 +169,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					)
 				}
 			}
+
+			// Refresh the recommender cache in the background so the next home load
+			// reflects the latest watch history.
+			if (isActive) runCatching { recoRepo.computeSuggestions(requireContext()) }
 		}
 
 		onItemViewClickedListener = CompositeClickedListener().apply {
