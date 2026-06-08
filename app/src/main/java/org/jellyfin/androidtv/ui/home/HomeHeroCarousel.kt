@@ -25,6 +25,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.composable.AsyncImage
@@ -78,6 +79,8 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 	LaunchedEffect(focused) {
 		val item = focused ?: return@LaunchedEffect
 		if (item.itemBackdropImages.isNotEmpty() || item.parentBackdropImages.isNotEmpty()) {
+			// Debounce: only swap once focus settles, so fast scrolling doesn't thrash.
+			delay(150)
 			displayed = item
 		}
 	}
@@ -96,7 +99,9 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 
 			Box(modifier = Modifier.fillMaxSize()) {
 				AsyncImage(
-					url = backdrop?.getUrl(api),
+					// Request a screen-sized backdrop (not the full-res/4K original) so it
+					// downloads and decodes fast on every focus change.
+					url = backdrop?.getUrl(api, fillWidth = 1920, fillHeight = 1080),
 					scaleType = ImageView.ScaleType.CENTER_CROP,
 					modifier = Modifier.fillMaxSize(),
 				)
