@@ -194,6 +194,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		super.onViewCreated(view, savedInstanceState)
 		// Pack the rows closer together so more fit on screen below the hero.
 		verticalGridView?.setItemSpacing(0)
+		// Keep the rows transparent so the full-screen backdrop shows through behind them.
+		view.background = null
+		verticalGridView?.background = null
 	}
 
 	/**

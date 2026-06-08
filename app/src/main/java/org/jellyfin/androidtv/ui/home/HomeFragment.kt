@@ -6,10 +6,8 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,12 +50,9 @@ class HomeFragment : Fragment() {
 		LaunchedEffect(rowsFocusRequester) { rowsFocusRequester.requestFocus() }
 
 		JellyfinTheme {
-			Column {
-				Box(modifier = Modifier.fillMaxWidth().height(130.dp)) {
-					HomeHeroCarousel(modifier = Modifier.fillMaxSize())
-
-					MainToolbar(MainToolbarActiveButton.Home)
-				}
+			Box(modifier = Modifier.fillMaxSize()) {
+				// Full-screen CLEAR backdrop of the focused item, behind everything.
+				HomeHeroCarousel(modifier = Modifier.fillMaxSize())
 
 				// The leanback code has its own awful focus handling that doesn't work properly with Compose view inteop to workaround this
 				// issue we add custom behavior that only allows focus exit when the current selected row is the first one. Additionally when
@@ -65,6 +60,8 @@ class HomeFragment : Fragment() {
 				var rowsSupportFragment by remember { mutableStateOf<HomeRowsFragment?>(null) }
 				AndroidFragment<HomeRowsFragment>(
 					modifier = Modifier
+						.fillMaxSize()
+						.padding(top = 140.dp)
 						.focusGroup()
 						.focusRequester(rowsFocusRequester)
 						.focusProperties {
@@ -77,12 +74,14 @@ class HomeFragment : Fragment() {
 									rowsSupportFragment?.verticalGridView?.clearFocus()
 								}
 							}
-						}
-						.fillMaxSize(),
+						},
 					onUpdate = { fragment ->
 						rowsSupportFragment = fragment
 					}
 				)
+
+				// Floating toolbar (Home/Search/gear/clock), drawn last = on top.
+				MainToolbar(MainToolbarActiveButton.Home)
 			}
 		}
 	}

@@ -101,38 +101,51 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 					modifier = Modifier.fillMaxSize(),
 				)
 
-				// Darken the top (under the floating toolbar) and bottom (under the title).
+				// Keep the upper "hero" band mostly clear so the artwork shows, then darken
+				// toward the bottom where the rows sit so their titles stay readable.
 				Box(
 					modifier = Modifier
 						.fillMaxSize()
 						.background(
 							Brush.verticalGradient(
-								0f to Color.Black.copy(alpha = 0.85f),
-								0.5f to Color.Transparent,
-								0.65f to Color.Transparent,
-								1f to Color.Black.copy(alpha = 0.9f),
+								0f to Color.Black.copy(alpha = 0.5f),    // under the toolbar/logo
+								0.12f to Color.Transparent,              // clear hero band (show the artwork)
+								0.26f to Color.Black.copy(alpha = 0.3f), // rows begin
+								0.55f to Color.Black.copy(alpha = 0.7f),
+								1f to Color.Black.copy(alpha = 0.95f),   // dark base under the rows
+							)
+						)
+				)
+				// Left-edge scrim to anchor the logo and the first column of cards.
+				Box(
+					modifier = Modifier
+						.fillMaxSize()
+						.background(
+							Brush.horizontalGradient(
+								0f to Color.Black.copy(alpha = 0.55f),
+								0.4f to Color.Transparent,
 							)
 						)
 				)
 
 				Column(
 					modifier = Modifier
-						.align(Alignment.BottomStart)
-						.padding(start = 48.dp, end = 48.dp, bottom = 18.dp)
+						.align(Alignment.TopStart)
+						.padding(start = 48.dp, top = 80.dp, end = 48.dp)
 				) {
 					if (logo != null) {
 						AsyncImage(
 							url = logo.getUrl(api),
 							blurHash = logo.blurHash,
 							scaleType = ImageView.ScaleType.FIT_START,
-							modifier = Modifier.height(52.dp),
+							modifier = Modifier.height(50.dp),
 						)
 					} else {
 						Text(
 							text = item.name.orEmpty(),
 							style = TextStyle(
 								color = Color.White,
-								fontSize = 32.sp,
+								fontSize = 34.sp,
 								fontWeight = FontWeight.Bold,
 							),
 						)
