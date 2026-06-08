@@ -131,7 +131,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Add sections to layout
 			withContext(Dispatchers.Main) {
-				val cardPresenter = CardPresenter(false, 96)
+				val cardPresenter = CardPresenter(true, 114)
 
 				// Add rows in order
 				notificationsRow.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
@@ -259,7 +259,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	private fun addCollectionRowsToAdapter(collections: List<Pair<UUID, String>>) {
-		val cardPresenter = CardPresenter(false, 96)
+		val cardPresenter = CardPresenter(true, 114)
 		@Suppress("UNCHECKED_CAST")
 		val rowsAdapter = adapter as MutableObjectAdapter<Row>
 		for ((id, name) in collections) {
