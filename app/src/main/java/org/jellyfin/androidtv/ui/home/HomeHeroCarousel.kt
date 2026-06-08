@@ -97,7 +97,6 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 			Box(modifier = Modifier.fillMaxSize()) {
 				AsyncImage(
 					url = backdrop?.getUrl(api),
-					blurHash = backdrop?.blurHash,
 					scaleType = ImageView.ScaleType.CENTER_CROP,
 					modifier = Modifier.fillMaxSize(),
 				)

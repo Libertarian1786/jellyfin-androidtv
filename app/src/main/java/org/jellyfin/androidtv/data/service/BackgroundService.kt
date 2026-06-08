@@ -60,8 +60,13 @@ class BackgroundService(
 	val currentItem get() = _currentItem.asStateFlow()
 
 	/**
-	 * Use all available backdrops from [baseItem] as background.
+	 * Update only [currentItem] (for the home hero) without loading or showing the
+	 * blurred full-screen background.
 	 */
+	fun setCurrentItem(baseItem: BaseItemDto?) {
+		if (baseItem != null) _currentItem.value = baseItem
+	}
+
 	fun setBackground(baseItem: BaseItemDto?) {
 		// Track the focused item so the home hero can mirror it (independent of the
 		// blurred-backdrop preference below).

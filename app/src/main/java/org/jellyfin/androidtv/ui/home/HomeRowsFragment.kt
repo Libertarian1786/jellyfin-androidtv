@@ -267,6 +267,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	override fun onResume() {
 		super.onResume()
 
+		// The home uses the hero for backdrops; keep the blurred full-screen
+		// background off here (also avoids re-blurring an image on every hover).
+		backgroundService.clearBackgrounds()
+
 		//React to deletion
 		if (currentRow != null && currentItem != null && currentItem?.baseItem != null && currentItem!!.baseItem!!.id == dataRefreshService.lastDeletedItemId) {
 			(currentRow!!.adapter as ItemRowAdapter).remove(currentItem)
@@ -352,7 +356,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				val itemRowAdapter = row.adapter as? ItemRowAdapter
 				itemRowAdapter?.loadMoreItemsIfNeeded(itemRowAdapter.indexOf(item))
 
-				backgroundService.setBackground(item.baseItem)
+				backgroundService.setCurrentItem(item.baseItem)
 			}
 		}
 	}
