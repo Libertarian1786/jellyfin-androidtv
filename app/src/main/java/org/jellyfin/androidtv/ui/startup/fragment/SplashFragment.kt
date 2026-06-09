@@ -26,22 +26,12 @@ import org.jellyfin.androidtv.ui.base.Text
 
 @Composable
 fun SplashScreen() {
+	// Blank black while the app connects — no branding between the intro video and the app.
 	Box(
 		modifier = Modifier
 			.fillMaxSize()
 			.background(Color.Black),
-		contentAlignment = Alignment.Center,
-	) {
-		Text(
-			text = "The Real McCoy",
-			style = TextStyle(
-				color = Color(0xFFE50914),
-				fontSize = 52.sp,
-				fontWeight = FontWeight.Bold,
-				textAlign = TextAlign.Center,
-			),
-		)
-	}
+	)
 }
 
 class SplashFragment : Fragment() {
