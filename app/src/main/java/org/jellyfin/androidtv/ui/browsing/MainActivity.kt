@@ -22,6 +22,7 @@ import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.databinding.ActivityMainBinding
 import org.jellyfin.androidtv.integration.LeanbackChannelWorker
+import org.jellyfin.androidtv.integration.McCoyUpdater
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
 import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.navigation.NavigationAction
@@ -77,6 +78,9 @@ class MainActivity : FragmentActivity() {
 		binding.background.setContent { AppBackground() }
 		binding.screensaver.setContent { InAppScreensaver() }
 		setContentView(binding.root)
+
+		// Self-update: pull a newer build from the GitHub release if one exists.
+		lifecycleScope.launch { McCoyUpdater.checkAndUpdate(this@MainActivity) }
 	}
 
 	override fun onResume() {

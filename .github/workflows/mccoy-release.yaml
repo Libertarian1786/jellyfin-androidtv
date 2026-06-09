@@ -1,0 +1,51 @@
+name: McCoy / Release
+
+# Builds the signed (debug-keyed, non-debuggable) APK and publishes it as a GitHub
+# release on every push to the custom branch. The in-app updater (McCoyUpdater) on each
+# device checks this repo's latest release and installs newer builds automatically.
+
+on:
+  push:
+    branches:
+      - release-custom-home
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mccoy-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK (build ${{ github.run_number }})
+        run: ./gradlew :app:assembleDebug -PmccoyBuild=${{ github.run_number }}
+
+      - name: Stage APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/*.apk "out/the-real-mccoy-build-${{ github.run_number }}.apk"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          body: "Automated build ${{ github.run_number }} from ${{ github.sha }}. Devices update themselves on next launch."
+          files: out/*.apk

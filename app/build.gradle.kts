@@ -17,7 +17,12 @@ android {
 		// Release version
 		applicationId = namespace
 		versionName = project.getVersionName()
-		versionCode = getVersionCode(versionName!!)
+		// Build number for the in-app self-updater. CI passes -PmccoyBuild=<run number>;
+		// 0 for local builds. When set it also drives a monotonic versionCode so updates
+		// install over each other cleanly.
+		val mccoyBuild = (project.findProperty("mccoyBuild") as String?)?.toIntOrNull() ?: 0
+		versionCode = if (mccoyBuild > 0) 100000 + mccoyBuild else getVersionCode(versionName!!)
+		buildConfigField("int", "MCCOY_BUILD", "$mccoyBuild")
 	}
 
 	buildFeatures {
@@ -31,6 +36,14 @@ android {
 	}
 
 	signingConfigs {
+		// Fixed key for the debug build so every build (local + CI) shares one signature,
+		// letting devices install updates in place. Standard Android debug keystore.
+		create("mccoyDebug") {
+			storeFile = file("mccoy.keystore")
+			storePassword = "android"
+			keyAlias = "androiddebugkey"
+			keyPassword = "android"
+		}
 		val keystoreFile = getProperty("keystore.file")
 		val keystorePassword = getProperty("keystore.password")
 		val signingKeyAlias = getProperty("signing.key.alias")
@@ -73,6 +86,9 @@ android {
 			// release-level speed, while keeping the ".debug" application id (installs
 			// in place, login preserved, no clash with the official app).
 			isDebuggable = false
+
+			// Sign with the fixed mccoyDebug key so in-app updates install over prior builds.
+			signingConfig = signingConfigs.getByName("mccoyDebug")
 
 			// Use different application id to run release and debug at the same time
 			applicationIdSuffix = ".debug"

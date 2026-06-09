@@ -14,6 +14,9 @@
         tools:ignore="LeanbackUsesWifi" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
+    <!-- In-app self-updater (install the downloaded APK) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Search permissions (voice to text) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -104,6 +107,17 @@
             android:authorities="${applicationId}.integration.provider.ImageProvider"
             android:exported="true"
             android:initOrder="10" />
+
+        <!-- FileProvider for the in-app self-updater (serves the downloaded APK to the installer) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updateprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/mccoy_update_paths" />
+        </provider>
 
         <!-- Video intro splash (launcher) -->
         <activity
