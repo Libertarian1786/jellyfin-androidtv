@@ -27,13 +27,22 @@ jobs:
         run: |
           git remote add upstream https://github.com/jellyfin/jellyfin-androidtv.git
           git fetch upstream master --tags
-          echo "BEHIND=$(git rev-list --count HEAD..upstream/master)" >> "$GITHUB_ENV"
+          # The merge target is the newest STABLE tag (vX.Y.Z), not the moving dev branch.
+          TAG=$(git tag --list 'v*' --sort=-creatordate | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          echo "TARGET_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "BEHIND_MASTER=$(git rev-list --count HEAD..upstream/master)" >> "$GITHUB_ENV"
+          if git merge-base --is-ancestor "$TAG" HEAD; then
+            echo "UP_TO_DATE=yes" >> "$GITHUB_ENV"
+          else
+            echo "UP_TO_DATE=no" >> "$GITHUB_ENV"
+          fi
 
       - name: Attempt merge (no commit, never pushed)
         id: merge
+        if: env.UP_TO_DATE == 'no'
         run: |
           git config user.email "ci@local" && git config user.name "merge-check"
-          if git merge --no-edit upstream/master; then
+          if git merge --no-edit "$TARGET_TAG"; then
             echo "merged=clean" >> "$GITHUB_OUTPUT"
           else
             echo "merged=conflict" >> "$GITHUB_OUTPUT"
@@ -69,15 +78,17 @@ jobs:
           {
             echo "## Upstream merge check"
             echo ""
-            echo "Upstream is **${BEHIND:-?} commits** ahead."
-            if [ "${{ steps.merge.outputs.merged }}" = "clean" ]; then
+            echo "Latest stable tag: **${TARGET_TAG:-?}** · dev branch is ${BEHIND_MASTER:-?} commits ahead (informational)."
+            if [ "${UP_TO_DATE}" = "yes" ]; then
+              echo "✅ Already up to date with the latest stable release — nothing to merge."
+            elif [ "${{ steps.merge.outputs.merged }}" = "clean" ]; then
               if [ "${{ steps.build.outputs.build }}" = "success" ]; then
-                echo "✅ Upstream merges cleanly AND builds. A manual merge session is cheap right now."
+                echo "🆕 ${TARGET_TAG} merges cleanly AND builds. A merge session is cheap right now."
               else
-                echo "⚠️ Merges cleanly but the BUILD FAILS — upstream changed an API our code uses. Needs a hands-on session."
+                echo "⚠️ ${TARGET_TAG} merges cleanly but the BUILD FAILS — upstream changed an API our code uses. Needs a hands-on session."
               fi
             else
-              echo "❌ Merge has conflicts in:"
+              echo "❌ ${TARGET_TAG} has merge conflicts in:"
               echo '```'
               cat /tmp/conflicts.txt 2>/dev/null || echo "(unknown)"
               echo '```'
