@@ -8,8 +8,9 @@ import androidx.leanback.widget.ListRowPresenter
 import androidx.leanback.widget.RowPresenter
 
 open class CustomListRowPresenter @JvmOverloads constructor(
-	private val topPadding: Int? = null
-) : ListRowPresenter(FocusHighlight.ZOOM_FACTOR_XSMALL) {
+	private val topPadding: Int? = null,
+	zoomFactor: Int = FocusHighlight.ZOOM_FACTOR_MEDIUM,
+) : ListRowPresenter(zoomFactor) {
 	init {
 		headerPresenter = CustomRowHeaderPresenter()
 	}

@@ -33,6 +33,10 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # The default is read-only off the default branch; this branch is the one
+          # that builds, so let it write the dependency cache too.
+          cache-read-only: false
 
       - name: Build APK (build ${{ github.run_number }})
         run: ./gradlew :app:assembleDebug -PmccoyBuild=${{ github.run_number }}

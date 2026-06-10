@@ -1,0 +1,85 @@
+name: Upstream / Merge check
+
+# Weekly dry-run: can upstream jellyfin-androidtv merge into release-custom-home and
+# still build? Reports the answer in the run summary. NEVER pushes anything — a clean
+# result just means a manual merge session is cheap right now.
+
+on:
+  schedule:
+    - cron: "0 12 * * 1" # Mondays
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  merge-check:
+    name: Dry-run upstream merge
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout fork branch
+        uses: actions/checkout@v4
+        with:
+          ref: release-custom-home
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/jellyfin/jellyfin-androidtv.git
+          git fetch upstream master --tags
+          echo "BEHIND=$(git rev-list --count HEAD..upstream/master)" >> "$GITHUB_ENV"
+
+      - name: Attempt merge (no commit, never pushed)
+        id: merge
+        run: |
+          git config user.email "ci@local" && git config user.name "merge-check"
+          if git merge --no-edit upstream/master; then
+            echo "merged=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "merged=conflict" >> "$GITHUB_OUTPUT"
+            git diff --name-only --diff-filter=U > /tmp/conflicts.txt || true
+          fi
+
+      - name: Setup Java
+        if: steps.merge.outputs.merged == 'clean'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        if: steps.merge.outputs.merged == 'clean'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      - name: Build merged tree
+        if: steps.merge.outputs.merged == 'clean'
+        id: build
+        run: |
+          if ./gradlew :app:assembleDebug; then
+            echo "build=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "## Upstream merge check"
+            echo ""
+            echo "Upstream is **${BEHIND:-?} commits** ahead."
+            if [ "${{ steps.merge.outputs.merged }}" = "clean" ]; then
+              if [ "${{ steps.build.outputs.build }}" = "success" ]; then
+                echo "✅ Upstream merges cleanly AND builds. A manual merge session is cheap right now."
+              else
+                echo "⚠️ Merges cleanly but the BUILD FAILS — upstream changed an API our code uses. Needs a hands-on session."
+              fi
+            else
+              echo "❌ Merge has conflicts in:"
+              echo '```'
+              cat /tmp/conflicts.txt 2>/dev/null || echo "(unknown)"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

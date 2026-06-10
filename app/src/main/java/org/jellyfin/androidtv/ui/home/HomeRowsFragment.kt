@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import android.view.View
 import androidx.leanback.app.RowsSupportFragment
 import androidx.leanback.widget.BaseGridView
+import androidx.leanback.widget.FocusHighlight
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.leanback.widget.OnItemViewSelectedListener
@@ -26,6 +27,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.CustomMessage
 import org.jellyfin.androidtv.constant.HomeSectionType
@@ -67,6 +69,9 @@ import java.time.LocalDate
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
+/** Single knob for the height (dp) of all poster cards on the home rows. */
+private const val HOME_CARD_HEIGHT = 114
+
 class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyListener {
 	private val api by inject<ApiClient>()
 	private val backgroundService by inject<BackgroundService>()
@@ -99,7 +104,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		super.onCreate(savedInstanceState)
 
 		val rowTopPadding = (6 * resources.displayMetrics.density).toInt()
-		adapter = MutableObjectAdapter<Row>(PositionableListRowPresenter(rowTopPadding))
+		// XSMALL focus zoom is a home-only choice; other screens keep the stock zoom.
+		adapter = MutableObjectAdapter<Row>(PositionableListRowPresenter(rowTopPadding, FocusHighlight.ZOOM_FACTOR_XSMALL))
 
 		lifecycleScope.launch(Dispatchers.IO) {
 			val currentUser = withTimeout(30.seconds) {
@@ -117,9 +123,12 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			rows.add(helper.loadResumeVideo())            // Continue Watching
 			rows.add(helper.loadNextUp())                 // Next Up
 
-			// Suggested for You — rendered instantly from the cached recommender output.
-			// The cache is refreshed in the background further below.
-			val suggestionItems = recoRepo.fetchItemsByIds(recoRepo.readCachedIds(requireContext()))
+			// Suggested for You — hydrated from the cached recommender id list. Bounded by a
+			// short timeout so a slow server can't hold up the whole home screen; the row is
+			// simply skipped this launch if hydration is slow. Cache refreshes further below.
+			val suggestionItems = withTimeoutOrNull(3.seconds) {
+				recoRepo.fetchItemsByIds(recoRepo.readCachedIds(requireContext()))
+			}.orEmpty()
 			if (suggestionItems.isNotEmpty()) {
 				rows.add(HomeFragmentSuggestionsRow(requireContext().getString(R.string.suggested_for_you), suggestionItems))
 			}
@@ -133,7 +142,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Add sections to layout
 			withContext(Dispatchers.Main) {
-				val cardPresenter = CardPresenter(true, 114)
+				val cardPresenter = CardPresenter(true, HOME_CARD_HEIGHT)
 
 				// Add rows in order
 				notificationsRow.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
@@ -164,7 +173,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				withContext(Dispatchers.Main) {
 					recentlyAdded.addToRowsAdapter(
 						requireContext(),
-						CardPresenter(true, 114),
+						CardPresenter(true, HOME_CARD_HEIGHT),
 						adapter as MutableObjectAdapter<Row>,
 					)
 				}
@@ -278,7 +287,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	private fun addCollectionRowsToAdapter(collections: List<Pair<UUID, String>>) {
-		val cardPresenter = CardPresenter(true, 114)
+		val cardPresenter = CardPresenter(true, HOME_CARD_HEIGHT)
 		@Suppress("UNCHECKED_CAST")
 		val rowsAdapter = adapter as MutableObjectAdapter<Row>
 		// Rotate the (alphabetical) list by a date-based offset so a different set of
@@ -340,6 +349,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			repeat(adapter.size()) { i ->
 				val rowAdapter = (adapter[i] as? ListRow)?.adapter as? ItemRowAdapter
+				// Static rows (Suggested for You) must not re-Retrieve: loadStaticItems
+				// re-adds all items without clearing (duplicates the row) and would
+				// notify the RecyclerView from this IO thread.
+				if (rowAdapter?.queryType == QueryType.StaticItems) return@repeat
 				if (force) rowAdapter?.Retrieve()
 				else rowAdapter?.ReRetrieveIfNeeded()
 			}

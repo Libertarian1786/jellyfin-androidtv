@@ -59,9 +59,11 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 	var displayed by remember { mutableStateOf<BaseItemDto?>(null) }
 
 	// Default to the most recently added movie until the user hovers something.
+	// The condition is re-checked AFTER the fetch (focus may have landed while it was
+	// in flight) and a failed fetch never clears an already-displayed item.
 	LaunchedEffect(Unit) {
 		if (displayed == null) {
-			displayed = runCatching {
+			val default = runCatching {
 				api.itemsApi.getItems(
 					includeItemTypes = setOf(BaseItemKind.MOVIE),
 					recursive = true,
@@ -72,6 +74,7 @@ fun HomeHeroCarousel(modifier: Modifier = Modifier) {
 					limit = 1,
 				).content.items?.firstOrNull()
 			}.getOrNull()
+			if (default != null && displayed == null) displayed = default
 		}
 	}
 
