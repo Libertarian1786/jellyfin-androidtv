@@ -3,6 +3,9 @@ package org.jellyfin.androidtv.ui.browsing
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.data.repository.ItemRepository
@@ -28,6 +31,10 @@ import org.jellyfin.sdk.model.api.request.GetSimilarItemsRequest
 import org.jellyfin.sdk.model.api.request.GetUpcomingEpisodesRequest
 import timber.log.Timber
 import java.util.UUID
+
+/** How many favorites feed the shuffle queue, and how many episodes each favorited series adds. */
+private const val FAVORITES_QUEUE_LIMIT = 50
+private const val EPISODES_PER_FAVORITE = 5
 
 object BrowsingUtils {
 	@JvmStatic
@@ -59,6 +66,68 @@ object BrowsingUtils {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Build a shuffled playback queue from the favorites in [library]. Favorited series are expanded
+	 * into episodes so the queue spans shows rather than replaying a single one; other types play as
+	 * themselves. Reports an empty list both when nothing is favorited and when the request fails.
+	 */
+	@JvmStatic
+	fun getFavoritesQueue(
+		api: ApiClient,
+		lifecycle: LifecycleOwner,
+		library: BaseItemDto,
+		type: BaseItemKind,
+		callback: (items: List<BaseItemDto>) -> Unit
+	) {
+		lifecycle.lifecycleScope.launch(Dispatchers.IO) {
+			val items = try {
+				val favorites by api.itemsApi.getItems(
+					parentId = library.id,
+					includeItemTypes = setOf(type),
+					recursive = true,
+					filters = setOf(ItemFilter.IS_FAVORITE),
+					fields = ItemRepository.itemFields,
+					sortBy = setOf(ItemSortBy.RANDOM),
+					limit = FAVORITES_QUEUE_LIMIT,
+				)
+
+				if (type != BaseItemKind.SERIES) favorites.items
+				else coroutineScope {
+					favorites.items
+						.map { series -> async { getFavoriteSeriesEpisodes(api, series.id) } }
+						.awaitAll()
+						.flatten()
+				}
+			} catch (error: ApiClientException) {
+				Timber.w(error, "Failed to build favorites queue")
+
+				emptyList()
+			}
+
+			withContext(Dispatchers.Main) {
+				callback(items)
+			}
+		}
+	}
+
+	private suspend fun getFavoriteSeriesEpisodes(api: ApiClient, seriesId: UUID): List<BaseItemDto> = try {
+		val result by api.itemsApi.getItems(
+			parentId = seriesId,
+			includeItemTypes = setOf(BaseItemKind.EPISODE),
+			recursive = true,
+			fields = ItemRepository.itemFields,
+			sortBy = setOf(ItemSortBy.RANDOM),
+			limit = EPISODES_PER_FAVORITE,
+		)
+
+		result.items
+	} catch (error: ApiClientException) {
+		// One unreadable series shouldn't sink the whole queue.
+		Timber.w(error, "Failed to load episodes for favorite series %s", seriesId)
+
+		emptyList()
 	}
 
 	@JvmStatic

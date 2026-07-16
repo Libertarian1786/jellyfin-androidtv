@@ -46,6 +46,7 @@ import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter;
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapterHelperKt;
 import org.jellyfin.androidtv.ui.navigation.Destinations;
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository;
+import org.jellyfin.androidtv.ui.playback.PlaybackLauncher;
 import org.jellyfin.androidtv.ui.presentation.CardPresenter;
 import org.jellyfin.androidtv.ui.presentation.GridButtonPresenter;
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter;
@@ -82,6 +83,7 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
     protected static final int SCHEDULE = 10;
     protected static final int SERIES = 11;
     protected static final int ALBUM_ARTISTS = 12;
+    protected static final int SHUFFLE_FAVORITES = 13;
     protected BaseItemDto mFolder;
     protected BaseItemKind itemType;
     protected boolean showViews = true;
@@ -103,6 +105,7 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
     private final Lazy<ApiClient> api = inject(ApiClient.class);
     private final Lazy<ItemLauncher> itemLauncher = inject(ItemLauncher.class);
     private final Lazy<KeyProcessor> keyProcessor = inject(KeyProcessor.class);
+    private final Lazy<PlaybackLauncher> playbackLauncher = inject(PlaybackLauncher.class);
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -294,6 +297,7 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
                 gridRowAdapter.add(new GridButton(SUGGESTED, getString(R.string.lbl_suggested)));
                 addStandardViewButtons(gridRowAdapter);
                 gridRowAdapter.add(new GridButton(RANDOM, getString(R.string.random)));
+                gridRowAdapter.add(new GridButton(SHUFFLE_FAVORITES, getString(R.string.lbl_shuffle_favorites)));
                 break;
 
             case MUSIC_ALBUM:
@@ -307,6 +311,7 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
             case SERIES:
                 addStandardViewButtons(gridRowAdapter);
                 gridRowAdapter.add(new GridButton(RANDOM, getString(R.string.random)));
+                gridRowAdapter.add(new GridButton(SHUFFLE_FAVORITES, getString(R.string.lbl_shuffle_favorites)));
                 break;
 
             default:
@@ -394,6 +399,18 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
                                 } else {
                                     navigationRepository.getValue().navigate(Destinations.INSTANCE.itemDetails(randomItem.getId()));
                                 }
+                            }
+
+                            return null;
+                        });
+                        break;
+
+                    case SHUFFLE_FAVORITES:
+                        BrowsingUtils.getFavoritesQueue(api.getValue(), getViewLifecycleOwner(), mFolder, itemType, favorites -> {
+                            if (favorites.isEmpty()) {
+                                Toast.makeText(requireContext(), getString(R.string.msg_no_favorites), Toast.LENGTH_SHORT).show();
+                            } else {
+                                playbackLauncher.getValue().launch(requireContext(), favorites, null, false, 0, true);
                             }
 
                             return null;

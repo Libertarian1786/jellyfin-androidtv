@@ -72,6 +72,9 @@ import kotlin.time.Duration.Companion.seconds
 /** Single knob for the height (dp) of all poster cards on the home rows. */
 private const val HOME_CARD_HEIGHT = 114
 
+/** Months where the Christmas row leads instead of being pinned to the bottom. */
+private val CHRISTMAS_MONTHS = 11..12
+
 class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyListener {
 	private val api by inject<ApiClient>()
 	private val backgroundService by inject<BackgroundService>()
@@ -293,11 +296,19 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// Rotate the (alphabetical) list by a date-based offset so a different set of
 		// collections leads each day, cycling through all of them over time. Stable
 		// within a day so navigating doesn't reshuffle the rows under you.
-		val ordered = if (collections.size > 1) {
+		val rotated = if (collections.size > 1) {
 			val offset = (LocalDate.now().toEpochDay() % collections.size).toInt()
 			collections.drop(offset) + collections.take(offset)
 		} else {
 			collections
+		}
+		// Christmas is seasonal: lead with it in Nov/Dec, and pin it to the very bottom
+		// the rest of the year so the daily rotation can't surface it in July.
+		val (christmas, others) = rotated.partition { it.second.equals("Christmas", ignoreCase = true) }
+		val ordered = when {
+			christmas.isEmpty() -> rotated
+			LocalDate.now().monthValue in CHRISTMAS_MONTHS -> christmas + others
+			else -> others + christmas
 		}
 		for ((id, name) in ordered) {
 			helper.loadCollectionRow(name, id).addToRowsAdapter(requireContext(), cardPresenter, rowsAdapter)
