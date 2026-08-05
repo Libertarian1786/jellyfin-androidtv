@@ -98,6 +98,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private var currentRow: ListRow? = null
 	private var justLoaded = true
 
+	/** The themed collection rows currently on screen, so a refresh can replace them. */
+	private val collectionRows = mutableListOf<Row>()
+
 	// Special rows
 	private val notificationsRow by lazy { NotificationsHomeFragmentRow(lifecycleScope, notificationsRepository) }
 	private val nowPlaying by lazy { HomeFragmentNowPlayingRow(lifecycleScope, playbackManager, mediaManager) }
@@ -281,11 +284,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				if (name.endsWith(" Collection")) null else item.id to name
 			}
 
-		if (fresh.isNotEmpty()) {
+		if (fresh.isNotEmpty() && fresh != cached) {
 			prefs.edit()
 				.putString("themed_collections", fresh.joinToString("\n") { "${it.first}\t${it.second}" })
 				.apply()
-			if (cached.isEmpty()) withContext(Dispatchers.Main) { addCollectionRowsToAdapter(fresh) }
+			// Render the fresh list now (replacing the cached rows) rather than leaving it
+			// for the next launch — otherwise a newly created collection stays invisible
+			// for a whole extra app start.
+			withContext(Dispatchers.Main) { addCollectionRowsToAdapter(fresh) }
 		}
 	}
 
@@ -293,6 +299,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val cardPresenter = CardPresenter(true, HOME_CARD_HEIGHT)
 		@Suppress("UNCHECKED_CAST")
 		val rowsAdapter = adapter as MutableObjectAdapter<Row>
+		// Drop any set rendered from the cache first, so refreshing replaces those rows
+		// instead of appending a duplicate copy of every collection. Tracked by reference
+		// because other rows (now playing, notifications) can shift the indices.
+		if (collectionRows.isNotEmpty()) {
+			for (row in collectionRows) rowsAdapter.remove(row)
+			collectionRows.clear()
+		}
+		val firstNewRow = rowsAdapter.size()
 		// Rotate the (alphabetical) list by a date-based offset so a different set of
 		// collections leads each day, cycling through all of them over time. Stable
 		// within a day so navigating doesn't reshuffle the rows under you.
@@ -312,6 +326,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}
 		for ((id, name) in ordered) {
 			helper.loadCollectionRow(name, id).addToRowsAdapter(requireContext(), cardPresenter, rowsAdapter)
+		}
+		// Remember what we just added so a later refresh can replace exactly these rows.
+		for (i in firstNewRow until rowsAdapter.size()) {
+			rowsAdapter.get(i)?.let(collectionRows::add)
 		}
 	}
 
