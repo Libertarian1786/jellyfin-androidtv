@@ -10,6 +10,7 @@ import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.MediaType
+import org.jellyfin.sdk.model.api.SortOrder
 import org.jellyfin.sdk.model.api.request.GetItemsRequest
 import org.jellyfin.sdk.model.api.request.GetNextUpRequest
 import org.jellyfin.sdk.model.api.request.GetRecommendedProgramsRequest
@@ -80,10 +81,15 @@ class HomeFragmentHelper(
 	}
 
 	fun loadCollectionRow(name: String, collectionId: UUID): HomeFragmentRow {
+		// Themed rows shuffle so a band surfaces different titles each time instead of always
+		// showing the same alphabetical head. Series where the running order is the point
+		// (Bond, Star Trek) stay in release order instead.
+		val chronological = CHRONOLOGICAL_BANDS.any { it.equals(name, ignoreCase = true) }
 		val query = GetItemsRequest(
 			parentId = collectionId,
 			fields = ItemRepository.browseFields,
-			sortBy = setOf(ItemSortBy.SORT_NAME),
+			sortBy = if (chronological) setOf(ItemSortBy.PREMIERE_DATE) else setOf(ItemSortBy.RANDOM),
+			sortOrder = if (chronological) setOf(SortOrder.ASCENDING) else null,
 			imageTypeLimit = 1,
 			limit = ITEM_LIMIT_COLLECTION,
 		)
@@ -98,5 +104,8 @@ class HomeFragmentHelper(
 		private const val ITEM_LIMIT_NEXT_UP = 50
 		private const val ITEM_LIMIT_ON_NOW = 20
 		private const val ITEM_LIMIT_COLLECTION = 60
+
+		/** Bands watched in release order — these are NOT shuffled. */
+		private val CHRONOLOGICAL_BANDS = setOf("Bond", "Star Trek")
 	}
 }
