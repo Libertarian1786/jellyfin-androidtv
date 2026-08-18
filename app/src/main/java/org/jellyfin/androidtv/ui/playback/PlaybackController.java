@@ -629,8 +629,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             return;
         }
 
-        // get subtitle info
-        mCurrentOptions.setSubtitleStreamIndex(response.getMediaSource().getDefaultSubtitleStreamIndex() != null ? response.getMediaSource().getDefaultSubtitleStreamIndex() : null);
+        // Closed captions/subtitles start OFF by default on every new item, regardless of what
+        // the server or the file's embedded "default" subtitle track suggests. The user can
+        // still turn a track on manually via the subtitle menu (PlaybackControllerHelper.setSubtitleIndex),
+        // which is a fully independent code path from this initial selection.
+        mCurrentOptions.setSubtitleStreamIndex(null);
         setDefaultAudioIndex(response);
         Timber.i("default audio index set to %s remote default %s", mDefaultAudioIndex, response.getMediaSource().getDefaultAudioStreamIndex());
         Timber.i("default sub index set to %s remote default %s", mCurrentOptions.getSubtitleStreamIndex(), response.getMediaSource().getDefaultSubtitleStreamIndex());
