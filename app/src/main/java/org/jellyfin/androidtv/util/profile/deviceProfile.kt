@@ -2,9 +2,11 @@ package org.jellyfin.androidtv.util.profile
 
 import android.content.Context
 import androidx.media3.common.MimeTypes
+import org.jellyfin.androidtv.constant.AUTO_QUALITY
 import org.jellyfin.androidtv.constant.Codec
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.AudioBehavior
+import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.ServerVersion
 import org.jellyfin.sdk.model.api.CodecType
 import org.jellyfin.sdk.model.api.DlnaProfileType
@@ -15,6 +17,9 @@ import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 import org.jellyfin.sdk.model.api.VideoRangeType
 import org.jellyfin.sdk.model.deviceprofile.DeviceProfileBuilder
 import org.jellyfin.sdk.model.deviceprofile.buildDeviceProfile
+import org.koin.java.KoinJavaComponent
+import timber.log.Timber
+import java.net.URI
 import kotlin.math.roundToInt
 
 private val downmixSupportedAudioCodecs = arrayOf(
@@ -45,8 +50,26 @@ private val supportedAudioCodecs = arrayOf(
 	Codec.Audio.VORBIS,
 )
 
+/**
+ * Resolves the bitrate preference to bits per second.
+ *
+ * [AUTO_QUALITY] picks the cap from where the server is. A private LAN address (10.x,
+ * 172.16-31.x, 192.168.x, localhost) means this device is at home on the same network, so
+ * allow full quality. Anything else - a Tailscale 100.x address, a public IP, a hostname -
+ * means the stream is crossing the internet (satellite at both ends when travelling), so cap
+ * at [AUTO_REMOTE_MBIT], which the link can sustain. A TV at home that is signed in through
+ * the Tailscale address counts as remote; choose a fixed number instead of Auto to override.
+ */
 private fun UserPreferences.getMaxBitrate(): Int {
-	var maxBitrate = this[UserPreferences.maxBitrate].toFloatOrNull()
+	val pref = this[UserPreferences.maxBitrate]
+	if (pref == AUTO_QUALITY) {
+		val host = runCatching { URI(KoinJavaComponent.get(ApiClient::class.java).baseUrl).host }.getOrNull()
+		val local = host != null && isPrivateLanHost(host)
+		val mbit = if (local) AUTO_LOCAL_MBIT else AUTO_REMOTE_MBIT
+		Timber.i("Auto bitrate: server host %s is %s, capping at %d Mbit/s", host, if (local) "local" else "remote", mbit)
+		return mbit * 1_000_000
+	}
+	var maxBitrate = pref.toFloatOrNull()
 
 	// The value "0" was used in an older release, make sure we prevent that from being used to avoid video not playing
 	if (maxBitrate == null || maxBitrate < 0.01f) maxBitrate = UserPreferences.maxBitrate.defaultValue.toFloat()
@@ -54,6 +77,23 @@ private fun UserPreferences.getMaxBitrate(): Int {
 	// Convert megabit to bit
 	return (maxBitrate * 1_000_000).roundToInt()
 }
+
+/** RFC 1918 private ranges plus loopback - addresses only reachable from inside the home network. */
+private fun isPrivateLanHost(host: String): Boolean {
+	if (host.equals("localhost", ignoreCase = true)) return true
+	val octets = host.split('.').map { it.toIntOrNull() ?: return false }
+	if (octets.size != 4) return false
+	return when {
+		octets[0] == 127 -> true
+		octets[0] == 10 -> true
+		octets[0] == 192 && octets[1] == 168 -> true
+		octets[0] == 172 && octets[1] in 16..31 -> true
+		else -> false
+	}
+}
+
+private const val AUTO_LOCAL_MBIT = 100
+private const val AUTO_REMOTE_MBIT = 10
 
 fun createDeviceProfile(
 	context: Context,

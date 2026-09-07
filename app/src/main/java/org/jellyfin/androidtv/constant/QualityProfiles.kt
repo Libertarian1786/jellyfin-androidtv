@@ -14,7 +14,7 @@ private val qualityOptions = setOf(
 @Suppress("MagicNumber")
 fun getQualityProfiles(
 	context: Context
-): Map<String, String> = qualityOptions.associate {
+): Map<String, String> = mapOf(AUTO_QUALITY to context.getString(R.string.bitrate_auto)) + qualityOptions.associate {
 	val value = when {
 		it >= 1.0 -> context.getString(R.string.bitrate_mbit, it)
 		else -> context.getString(R.string.bitrate_kbit, it * 1000.0)

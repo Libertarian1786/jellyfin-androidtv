@@ -63,6 +63,7 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 import org.jellyfin.sdk.Jellyfin as JellyfinSdk
+import kotlin.time.Duration.Companion.seconds
 
 val defaultDeviceInfo = named("defaultDeviceInfo")
 
@@ -70,7 +71,16 @@ val appModule = module {
 	// SDK
 	single(defaultDeviceInfo) { androidDevice(get()) }
 	single { OkHttpFactory() }
-	single { HttpClientOptions() }
+	// Remote viewing rides Tailscale over satellite (Starlink at both ends when travelling):
+	// RTTs of 100-600 ms plus handover gaps that the SDK's stock 6 s connect / 30 s socket
+	// timeouts turn into spurious "server unreachable" errors. Media requests already get an
+	// unlimited request timeout in PlaybackModule; this widens the transport limits for all.
+	single {
+		HttpClientOptions(
+			connectTimeout = 20.seconds,
+			socketTimeout = 60.seconds,
+		)
+	}
 	single {
 		createJellyfin {
 			context = androidContext()

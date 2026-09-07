@@ -31,6 +31,7 @@ import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.analytics.AnalyticsListener;
@@ -225,6 +226,24 @@ public class VideoManager {
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
                 .build(), true);
+
+        // Buffering tuned for high-latency, variable links (satellite / remote over Tailscale).
+        // Stock media3 values are min/max 50 s, start after 1 s, resume-after-stall after 2 s -
+        // built for stable broadband. A brief bandwidth dip that outlasts the buffer stalls
+        // playback, so we buffer further ahead and demand more before (re)starting.
+        // prioritizeTimeOverSizeThresholds=false keeps targetBufferBytes as a HARD cap, which
+        // protects the 2 GB Chromecasts from over-buffering at 4K bitrates. Constraints the
+        // library enforces: playback <= min, afterRebuffer <= min, min <= max.
+        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                        /* minBufferMs */ 60_000,
+                        /* maxBufferMs */ 180_000,
+                        /* bufferForPlaybackMs */ 5_000,
+                        /* bufferForPlaybackAfterRebufferMs */ 15_000)
+                .setTargetBufferBytes(160 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(false)
+                .build();
+        exoPlayerBuilder.setLoadControl(loadControl);
 
         return exoPlayerBuilder;
     }
