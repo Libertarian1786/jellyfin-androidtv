@@ -19,6 +19,7 @@ import org.jellyfin.sdk.model.deviceprofile.DeviceProfileBuilder
 import org.jellyfin.sdk.model.deviceprofile.buildDeviceProfile
 import org.koin.java.KoinJavaComponent
 import timber.log.Timber
+import java.net.InetAddress
 import java.net.URI
 import kotlin.math.roundToInt
 
@@ -81,15 +82,10 @@ private fun UserPreferences.getMaxBitrate(): Int {
 /** RFC 1918 private ranges plus loopback - addresses only reachable from inside the home network. */
 private fun isPrivateLanHost(host: String): Boolean {
 	if (host.equals("localhost", ignoreCase = true)) return true
-	val octets = host.split('.').map { it.toIntOrNull() ?: return false }
-	if (octets.size != 4) return false
-	return when {
-		octets[0] == 127 -> true
-		octets[0] == 10 -> true
-		octets[0] == 192 && octets[1] == 168 -> true
-		octets[0] == 172 && octets[1] in 16..31 -> true
-		else -> false
-	}
+	// Only IPv4 literals reach InetAddress, so this never performs a DNS lookup.
+	if (!host.all { it.isDigit() || it == '.' }) return false
+	val address = runCatching { InetAddress.getByName(host) }.getOrNull() ?: return false
+	return address.isSiteLocalAddress || address.isLoopbackAddress
 }
 
 private const val AUTO_LOCAL_MBIT = 100

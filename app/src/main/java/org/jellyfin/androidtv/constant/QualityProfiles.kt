@@ -3,6 +3,9 @@ package org.jellyfin.androidtv.constant
 import android.content.Context
 import org.jellyfin.androidtv.R
 
+/** Preference value for the Auto bitrate choice; resolved at playback time in deviceProfile.kt. */
+const val AUTO_QUALITY = "auto"
+
 @Suppress("MagicNumber")
 private val qualityOptions = setOf(
 	200.0, 180.0, 140.0, 120.0, 110.0, 100.0, // 100 >=
