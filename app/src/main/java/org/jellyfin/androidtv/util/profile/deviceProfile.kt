@@ -64,7 +64,7 @@ private val supportedAudioCodecs = arrayOf(
 private fun UserPreferences.getMaxBitrate(): Int {
 	val pref = this[UserPreferences.maxBitrate]
 	if (pref == AUTO_QUALITY) {
-		val host = runCatching { URI(KoinJavaComponent.get(ApiClient::class.java).baseUrl).host }.getOrNull()
+		val host = runCatching { URI(KoinJavaComponent.get<ApiClient>(ApiClient::class.java).baseUrl).host }.getOrNull()
 		val local = host != null && isPrivateLanHost(host)
 		val mbit = if (local) AUTO_LOCAL_MBIT else AUTO_REMOTE_MBIT
 		Timber.i("Auto bitrate: server host %s is %s, capping at %d Mbit/s", host, if (local) "local" else "remote", mbit)
