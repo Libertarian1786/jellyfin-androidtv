@@ -28,16 +28,19 @@ import java.net.URI
 /** Full quality: the cap used on the home network, in bits per second. */
 const val AUTO_LOCAL_BPS = 200_000_000
 
-/** The steps used while remote, in bits per second. */
+/** The steps used while remote, in bits per second - the same rungs as the manual quality list, up to 200. */
 private val LADDER_BPS = listOf(
 	1_500_000, 2_000_000, 3_000_000, 4_000_000, 5_000_000, 6_000_000,
-	8_000_000, 10_000_000, 12_000_000, 15_000_000, 20_000_000,
+	8_000_000, 10_000_000, 12_000_000, 15_000_000, 20_000_000, 30_000_000,
+	40_000_000, 60_000_000, 80_000_000, 100_000_000, 140_000_000, 200_000_000,
 )
 private const val DEFAULT_REMOTE_BPS = 5_000_000
 private const val PROBE_TTL_MS = 10 * 60 * 1000L
 private const val PROBE_SMALL_BYTES = 500_000
 private const val PROBE_LARGE_BYTES = 2_000_000
+private const val PROBE_HUGE_BYTES = 8_000_000
 private const val PROBE_FAST_LINK_BPS = 4_000_000
+private const val PROBE_VERY_FAST_LINK_BPS = 40_000_000
 private const val PROBE_SAFETY = 0.8
 
 private const val TICK_MS = 1_000L
@@ -119,6 +122,7 @@ class AdaptiveBitrateController(
 			var bps = measure(PROBE_SMALL_BYTES)
 			// a fast link finishes the small sample too quickly to time well; take a bigger one
 			if (bps > PROBE_FAST_LINK_BPS) bps = measure(PROBE_LARGE_BYTES)
+			if (bps > PROBE_VERY_FAST_LINK_BPS) bps = measure(PROBE_HUGE_BYTES)
 			state.probedBps = bps
 			state.probedAt = System.currentTimeMillis()
 			Timber.i(
@@ -222,8 +226,11 @@ class AdaptiveBitrateController(
 		if (roomToClimb) upTicks++ else upTicks = 0
 		val upCooldown = if (lastSwitchWasDown) UP_AFTER_DOWN_MS else UP_COOLDOWN_MS
 		if (next != null && upTicks >= UP_HOLD_TICKS && sinceSwitch > upCooldown) {
+			// Jump to the highest rung the measured link carries with the same margin, so a fast
+			// connection reaches full quality in one step instead of one rung every few minutes.
+			val target = maxOf(next, ladderFloor((estimate / UP_HEADROOM).toLong()))
 			switchTo(
-				next,
+				target,
 				"the link has held %s for %d s (buffer %.1f s)".format(mbit(estimate), UP_HOLD_TICKS, ahead / 1000.0),
 				down = false,
 			)
