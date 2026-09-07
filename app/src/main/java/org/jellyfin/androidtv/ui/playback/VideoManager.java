@@ -264,6 +264,7 @@ public class VideoManager {
 
     public void setZoom(@NonNull ZoomMode mode) {
         mZoomMode = mode;
+        float scale = 1f;
         switch (mode) {
             case FIT:
                 mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
@@ -274,6 +275,27 @@ public class VideoManager {
             case STRETCH:
                 mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
                 break;
+            case ZOOM_107:
+                mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                scale = 1.07f;
+                break;
+            case ZOOM_120:
+                mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                scale = 1.2f;
+                break;
+            case ZOOM_135:
+                mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                scale = 1.35f;
+                break;
+        }
+        // The resize modes only act on the frame's shape. Bars that are encoded INTO a 16:9 frame
+        // (most streaming rips) are invisible to them, so the zoom steps enlarge the video surface
+        // itself around its centre; the overflow is clipped by the player view, which pushes the
+        // bars off screen. Only the surface is scaled, so subtitles and the controls stay put.
+        View surface = mExoPlayerView.getVideoSurfaceView();
+        if (surface != null) {
+            surface.setScaleX(scale);
+            surface.setScaleY(scale);
         }
     }
 

@@ -20,5 +20,21 @@ enum class ZoomMode(
 	 * Sets the zoom mode to stretch.
 	 */
 	STRETCH(R.string.lbl_stretch),
+
+	/**
+	 * Enlarges the picture 7%: removes the side bars of a 1.66:1 film delivered inside a 16:9 frame
+	 * (most Disney animation), which the resize modes above cannot see because the frame is 16:9.
+	 */
+	ZOOM_107(R.string.lbl_zoom_107),
+
+	/**
+	 * Enlarges the picture 20%.
+	 */
+	ZOOM_120(R.string.lbl_zoom_120),
+
+	/**
+	 * Enlarges the picture 35%: removes the top and bottom bars of a 2.40:1 film delivered inside a 16:9 frame.
+	 */
+	ZOOM_135(R.string.lbl_zoom_135),
 }
 

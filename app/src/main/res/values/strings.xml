@@ -189,6 +189,9 @@
     <string name="lbl_auto_crop">Auto crop</string>
     <string name="lbl_stretch">Stretch</string>
     <string name="lbl_fit">Normal</string>
+    <string name="lbl_zoom_107">Zoom 7% (side bars, 1.66:1 films)</string>
+    <string name="lbl_zoom_120">Zoom 20%</string>
+    <string name="lbl_zoom_135">Zoom 35% (top/bottom bars, 2.40:1 films)</string>
     <string name="lbl_audio_track">Select audio track</string>
     <string name="lbl_playback_speed">Playback speed</string>
     <string name="lbl_quality_profile">Quality profile</string>
