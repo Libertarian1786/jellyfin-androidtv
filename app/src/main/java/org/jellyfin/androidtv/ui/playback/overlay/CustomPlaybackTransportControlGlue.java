@@ -25,6 +25,7 @@ import androidx.leanback.widget.RowPresenter;
 import org.jellyfin.androidtv.R;
 import org.jellyfin.androidtv.preference.UserPreferences;
 import org.jellyfin.androidtv.preference.constant.ClockBehavior;
+import org.jellyfin.androidtv.ui.playback.AdaptiveBitrateController;
 import org.jellyfin.androidtv.ui.playback.PlaybackController;
 import org.jellyfin.androidtv.ui.playback.overlay.action.AndroidAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.ChannelBarChannelAction;
@@ -76,6 +77,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
     // Injected views
     private TextView mEndsText = null;
+    private TextView mQualityText = null;
 
     private final Handler mHandler = new Handler();
     private Runnable mRefreshEndTime;
@@ -95,7 +97,9 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
         };
 
         mRefreshViewVisibility = () -> {
-            if (mButtonRef != null && mButtonRef.getVisibility() != mEndsText.getVisibility())
+            if (mButtonRef != null && mQualityText != null && mQualityText.length() > 0 && mButtonRef.getVisibility() != mQualityText.getVisibility())
+                mQualityText.setVisibility(mButtonRef.getVisibility());
+            if (mButtonRef != null && mEndsText != null && mButtonRef.getVisibility() != mEndsText.getVisibility())
                 mEndsText.setVisibility(mButtonRef.getVisibility());
             else
                 mHandler.postDelayed(mRefreshViewVisibility, 100);
@@ -132,34 +136,44 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
                 RowPresenter.ViewHolder vh = super.createRowViewHolder(parent);
 
                 ClockBehavior showClock = KoinJavaComponent.<UserPreferences>get(UserPreferences.class).get(UserPreferences.Companion.getClockBehavior());
+                boolean showEndTime = showClock == ClockBehavior.ALWAYS || showClock == ClockBehavior.IN_VIDEO;
 
-                if (showClock == ClockBehavior.ALWAYS || showClock == ClockBehavior.IN_VIDEO) {
-                    Context context = parent.getContext();
+                // Bottom-right corner of the transport bar: [quality readout] [Ends at hh:mm]
+                Context context = parent.getContext();
+                mQualityText = new TextView(context);
+                mQualityText.setTextAppearance(context, androidx.leanback.R.style.Widget_Leanback_PlaybackControlsTimeStyle);
+                mQualityText.setPadding(0, 0, (int) (24 * context.getResources().getDisplayMetrics().density), 0);
+                setQualityText();
+                if (showEndTime) {
                     mEndsText = new TextView(context);
                     mEndsText.setTextAppearance(context, androidx.leanback.R.style.Widget_Leanback_PlaybackControlsTimeStyle);
                     setEndTime();
-
-                    LinearLayout view = (LinearLayout) vh.view;
-
-                    PlaybackTransportRowView bar = (PlaybackTransportRowView) view.getChildAt(1);
-                    FrameLayout v = (FrameLayout) bar.getChildAt(0);
-                    mButtonRef = (LinearLayout) v.getChildAt(0);
-
-                    bar.removeViewAt(0);
-                    RelativeLayout rl = new RelativeLayout(context);
-                    RelativeLayout.LayoutParams rlp = new RelativeLayout.LayoutParams(
-                            RelativeLayout.LayoutParams.WRAP_CONTENT,
-                            RelativeLayout.LayoutParams.WRAP_CONTENT);
-                    rl.addView(v);
-
-                    RelativeLayout.LayoutParams rlp2 = new RelativeLayout.LayoutParams(
-                            RelativeLayout.LayoutParams.WRAP_CONTENT,
-                            RelativeLayout.LayoutParams.WRAP_CONTENT);
-                    rlp2.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
-                    rlp2.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
-                    rl.addView(mEndsText, rlp2);
-                    bar.addView(rl, 0, rlp);
                 }
+
+                LinearLayout view = (LinearLayout) vh.view;
+
+                PlaybackTransportRowView bar = (PlaybackTransportRowView) view.getChildAt(1);
+                FrameLayout v = (FrameLayout) bar.getChildAt(0);
+                mButtonRef = (LinearLayout) v.getChildAt(0);
+
+                bar.removeViewAt(0);
+                RelativeLayout rl = new RelativeLayout(context);
+                RelativeLayout.LayoutParams rlp = new RelativeLayout.LayoutParams(
+                        RelativeLayout.LayoutParams.WRAP_CONTENT,
+                        RelativeLayout.LayoutParams.WRAP_CONTENT);
+                rl.addView(v);
+
+                LinearLayout corner = new LinearLayout(context);
+                corner.setOrientation(LinearLayout.HORIZONTAL);
+                corner.addView(mQualityText);
+                if (mEndsText != null) corner.addView(mEndsText);
+                RelativeLayout.LayoutParams rlp2 = new RelativeLayout.LayoutParams(
+                        RelativeLayout.LayoutParams.WRAP_CONTENT,
+                        RelativeLayout.LayoutParams.WRAP_CONTENT);
+                rlp2.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+                rlp2.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+                rl.addView(corner, rlp2);
+                bar.addView(rl, 0, rlp);
 
                 return vh;
             }
@@ -307,6 +321,21 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
         }
     }
 
+    /** Refreshes the bottom-right quality readout; hidden while nothing is known about the stream. */
+    private void setQualityText() {
+        if (mQualityText == null) return;
+        String label = KoinJavaComponent.<AdaptiveBitrateController>get(AdaptiveBitrateController.class).qualityLabel(playbackController);
+        mQualityText.setText(label);
+        if (label.isEmpty()) mQualityText.setVisibility(View.GONE);
+        else if (mButtonRef != null) mQualityText.setVisibility(mButtonRef.getVisibility());
+    }
+
+    @Override
+    protected void onUpdateProgress() {
+        super.onUpdateProgress();
+        setQualityText();
+    }
+
     private void setEndTime() {
         if (mEndsText == null || getPlayerAdapter().getDuration() < 1)
             return;
@@ -365,7 +394,9 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
     }
 
     public void setInjectedViewsVisibility() {
-        if (mButtonRef != null && mButtonRef.getVisibility() != mEndsText.getVisibility())
+        if (mButtonRef != null && mQualityText != null && mQualityText.length() > 0 && mButtonRef.getVisibility() != mQualityText.getVisibility())
+            mQualityText.setVisibility(mButtonRef.getVisibility());
+        if (mButtonRef != null && mEndsText != null && mButtonRef.getVisibility() != mEndsText.getVisibility())
             mEndsText.setVisibility(mButtonRef.getVisibility());
         mHandler.removeCallbacks(mRefreshViewVisibility);
         mHandler.postDelayed(mRefreshViewVisibility, 100);

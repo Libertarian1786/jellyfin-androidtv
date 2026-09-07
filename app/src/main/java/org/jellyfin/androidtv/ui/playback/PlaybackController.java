@@ -11,6 +11,7 @@ import android.view.Display;
 import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
+import androidx.media3.common.Format;
 import androidx.annotation.Nullable;
 
 import org.jellyfin.androidtv.R;
@@ -1297,6 +1298,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             bufferedPosition = getDuration();
 
         return bufferedPosition;
+    }
+
+    /** The video format being rendered, or null when there is no player yet. */
+    public Format getVideoFormat() {
+        return hasInitializedVideoManager() ? mVideoManager.getVideoFormat() : null;
     }
 
     /** Link throughput estimate from the player in bits per second, or -1 when unavailable. */

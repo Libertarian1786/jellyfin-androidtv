@@ -297,6 +297,11 @@ public class VideoManager {
         return -1;
     }
 
+    /** The video format ExoPlayer is rendering right now, or null before playback starts. */
+    public Format getVideoFormat() {
+        return isInitialized() ? mExoPlayer.getVideoFormat() : null;
+    }
+
     /** ExoPlayer's estimate of the link throughput in bits per second, or -1 when no player exists. */
     public long getBandwidthEstimate() {
         return mBandwidthMeter == null ? -1 : mBandwidthMeter.getBitrateEstimate();

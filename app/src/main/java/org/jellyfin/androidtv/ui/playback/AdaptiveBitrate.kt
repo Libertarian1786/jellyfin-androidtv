@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.playback
 
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.Dispatchers
@@ -8,6 +9,8 @@ import org.jellyfin.androidtv.constant.AUTO_QUALITY
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
+import org.jellyfin.sdk.model.api.MediaStreamType
+import org.jellyfin.sdk.model.api.PlayMethod
 import timber.log.Timber
 import java.net.InetAddress
 import java.net.URI
@@ -30,7 +33,7 @@ const val AUTO_LOCAL_BPS = 200_000_000
 
 /** The steps used while remote, in bits per second - the same rungs as the manual quality list, up to 200. */
 private val LADDER_BPS = listOf(
-	1_500_000, 2_000_000, 3_000_000, 4_000_000, 5_000_000, 6_000_000,
+	420_000, 720_000, 1_000_000, 1_500_000, 2_000_000, 3_000_000, 4_000_000, 5_000_000, 6_000_000,
 	8_000_000, 10_000_000, 12_000_000, 15_000_000, 20_000_000, 30_000_000,
 	40_000_000, 60_000_000, 80_000_000, 100_000_000, 140_000_000, 200_000_000,
 )
@@ -65,6 +68,7 @@ private const val BUFFER_FULL_MAX_MS = 200_000L
 private fun ladderFloor(bps: Long): Int = LADDER_BPS.lastOrNull { it <= bps } ?: LADDER_BPS.first()
 private fun ladderIndex(bps: Int): Int = LADDER_BPS.indexOfFirst { it >= bps }.takeIf { it >= 0 } ?: LADDER_BPS.lastIndex
 private fun mbit(bps: Long): String = if (bps <= 0) "unknown" else "%.1f Mbit/s".format(bps / 1_000_000.0)
+private fun mbitShort(bps: Long): String = if (bps >= 10_000_000) "%.0f Mb/s".format(bps / 1_000_000.0) else "%.1f Mb/s".format(bps / 1_000_000.0)
 
 object ServerLocality {
 	/** True when the server address is on the home network (RFC 1918 or loopback) and the test override is off. */
@@ -114,6 +118,36 @@ class AdaptiveBitrateController(
 
 	private val enabled: Boolean
 		get() = userPreferences[UserPreferences.maxBitrate] == AUTO_QUALITY
+
+	/** True while the ticker is watching a remote stream. */
+	val isActive: Boolean
+		get() = ticker != null
+
+	/**
+	 * Short readout for the bottom-right corner of the playback overlay, e.g. "Auto · 1080p · 5.6 Mb/s"
+	 * for an adaptive transcode or "2160p · 24 Mb/s · Direct" for direct play. Resolution is what
+	 * ExoPlayer is actually rendering; the bitrate is the video bitrate the server was asked for when
+	 * transcoding, or the file's bitrate when playing directly.
+	 */
+	fun qualityLabel(c: PlaybackController): String {
+		val info = c.currentStreamInfo ?: return ""
+		val source = c.currentMediaSource
+		val height = c.videoFormat?.height?.takeIf { it > 0 }
+			?: source?.mediaStreams?.firstOrNull { it.type == MediaStreamType.VIDEO }?.height
+		val transcoding = info.playMethod == PlayMethod.TRANSCODE
+		val bps: Long? = if (transcoding) {
+			runCatching { Uri.parse(info.mediaUrl).getQueryParameter("VideoBitrate")?.toLong() }.getOrNull()
+				?: state.capBps?.toLong()
+		} else {
+			source?.bitrate?.toLong()
+		}
+		val parts = mutableListOf<String>()
+		if (isActive) parts += "Auto"
+		height?.let { parts += "${it}p" }
+		bps?.let { parts += mbitShort(it) }
+		if (!transcoding) parts += "Direct"
+		return parts.joinToString(" · ")
+	}
 
 	/** Measures the link to a remote server so the first stream starts at a sensible cap. */
 	suspend fun probeIfNeeded() {
