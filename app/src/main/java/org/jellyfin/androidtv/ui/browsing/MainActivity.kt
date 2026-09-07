@@ -27,6 +27,7 @@ import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
 import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.navigation.NavigationAction
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import org.jellyfin.androidtv.ui.playback.AdaptiveBitrateController
 import org.jellyfin.androidtv.ui.screensaver.InAppScreensaver
 import org.jellyfin.androidtv.ui.startup.StartupActivity
 import org.jellyfin.androidtv.util.applyTheme
@@ -41,6 +42,7 @@ class MainActivity : FragmentActivity() {
 	private val userRepository by inject<UserRepository>()
 	private val interactionTrackerViewModel by viewModel<InteractionTrackerViewModel>()
 	private val workManager by inject<WorkManager>()
+	private val adaptiveBitrate by inject<AdaptiveBitrateController>()
 
 	private lateinit var binding: ActivityMainBinding
 
@@ -81,6 +83,9 @@ class MainActivity : FragmentActivity() {
 
 		// Self-update: pull a newer build from the GitHub release if one exists.
 		lifecycleScope.launch { McCoyUpdater.checkAndUpdate(this@MainActivity) }
+		// Adaptive bitrate: measure the link to a remote server (at most every 10 minutes) so the
+		// first stream starts at a sensible cap instead of guessing.
+		lifecycleScope.launch { adaptiveBitrate.probeIfNeeded() }
 	}
 
 	override fun onResume() {

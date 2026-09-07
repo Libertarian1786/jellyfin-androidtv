@@ -274,7 +274,9 @@
     <string name="lbl_Reset">Reset</string>
     <string name="bitrate_mbit">%1$,.0f Mbit/s</string>
     <string name="bitrate_kbit">%1$,.0f Kbit/s</string>
-    <string name="bitrate_auto">Auto (full quality at home, 10 Mbit/s away)</string>
+    <string name="bitrate_auto">Auto (adapts to your connection)</string>
+    <string name="pref_adaptive_force_remote">Treat server as remote</string>
+    <string name="pref_adaptive_force_remote_description">Runs the Auto bitrate adaptation even on the home network (for testing)</string>
     <string name="mark_watched">Mark watched</string>
     <string name="mark_watched_message">The item didn\'t appear to play as long as its duration. Mark watched?</string>
     <string name="no_player">No player</string>

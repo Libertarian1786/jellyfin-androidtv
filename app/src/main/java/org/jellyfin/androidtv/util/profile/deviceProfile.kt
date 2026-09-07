@@ -6,6 +6,9 @@ import org.jellyfin.androidtv.constant.AUTO_QUALITY
 import org.jellyfin.androidtv.constant.Codec
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.AudioBehavior
+import org.jellyfin.androidtv.ui.playback.AUTO_LOCAL_BPS
+import org.jellyfin.androidtv.ui.playback.AdaptiveBitrateState
+import org.jellyfin.androidtv.ui.playback.ServerLocality
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.ServerVersion
 import org.jellyfin.sdk.model.api.CodecType
@@ -19,8 +22,6 @@ import org.jellyfin.sdk.model.deviceprofile.DeviceProfileBuilder
 import org.jellyfin.sdk.model.deviceprofile.buildDeviceProfile
 import org.koin.java.KoinJavaComponent
 import timber.log.Timber
-import java.net.InetAddress
-import java.net.URI
 import kotlin.math.roundToInt
 
 private val downmixSupportedAudioCodecs = arrayOf(
@@ -54,21 +55,19 @@ private val supportedAudioCodecs = arrayOf(
 /**
  * Resolves the bitrate preference to bits per second.
  *
- * [AUTO_QUALITY] picks the cap from where the server is. A private LAN address (10.x,
- * 172.16-31.x, 192.168.x, localhost) means this device is at home on the same network, so
- * allow full quality. Anything else - a Tailscale 100.x address, a public IP, a hostname -
- * means the stream is crossing the internet (satellite at both ends when travelling), so cap
- * at [AUTO_REMOTE_MBIT], which the link can sustain. A TV at home that is signed in through
- * the Tailscale address counts as remote; choose a fixed number instead of Auto to override.
+ * [AUTO_QUALITY] hands the decision to the adaptive bitrate logic in AdaptiveBitrate.kt: on the
+ * home network there is no cap; over the internet the cap starts from a link measurement and is
+ * moved up or down while playing by [org.jellyfin.androidtv.ui.playback.AdaptiveBitrateController].
  */
 private fun UserPreferences.getMaxBitrate(): Int {
 	val pref = this[UserPreferences.maxBitrate]
 	if (pref == AUTO_QUALITY) {
-		val host = runCatching { URI(KoinJavaComponent.get<ApiClient>(ApiClient::class.java).baseUrl).host }.getOrNull()
-		val local = host != null && isPrivateLanHost(host)
-		val mbit = if (local) AUTO_LOCAL_MBIT else AUTO_REMOTE_MBIT
-		Timber.i("Auto bitrate: server host %s is %s, capping at %d Mbit/s", host, if (local) "local" else "remote", mbit)
-		return mbit * 1_000_000
+		val api = KoinJavaComponent.get<ApiClient>(ApiClient::class.java)
+		val state = KoinJavaComponent.get<AdaptiveBitrateState>(AdaptiveBitrateState::class.java)
+		val local = ServerLocality.isLocal(api, this)
+		val bps = if (local) AUTO_LOCAL_BPS else state.currentCapBps()
+		Timber.i("Auto bitrate: server is %s, asking for %.1f Mbit/s", if (local) "on the home network" else "remote", bps / 1_000_000.0)
+		return bps
 	}
 	var maxBitrate = pref.toFloatOrNull()
 
@@ -78,18 +77,6 @@ private fun UserPreferences.getMaxBitrate(): Int {
 	// Convert megabit to bit
 	return (maxBitrate * 1_000_000).roundToInt()
 }
-
-/** RFC 1918 private ranges plus loopback - addresses only reachable from inside the home network. */
-private fun isPrivateLanHost(host: String): Boolean {
-	if (host.equals("localhost", ignoreCase = true)) return true
-	// Only IPv4 literals reach InetAddress, so this never performs a DNS lookup.
-	if (!host.all { it.isDigit() || it == '.' }) return false
-	val address = runCatching { InetAddress.getByName(host) }.getOrNull() ?: return false
-	return address.isSiteLocalAddress || address.isLoopbackAddress
-}
-
-private const val AUTO_LOCAL_MBIT = 100
-private const val AUTO_REMOTE_MBIT = 10
 
 fun createDeviceProfile(
 	context: Context,

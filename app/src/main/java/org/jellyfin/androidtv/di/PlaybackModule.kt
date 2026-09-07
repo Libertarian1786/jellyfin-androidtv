@@ -13,6 +13,8 @@ import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.browsing.MainActivity
+import org.jellyfin.androidtv.ui.playback.AdaptiveBitrateController
+import org.jellyfin.androidtv.ui.playback.AdaptiveBitrateState
 import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
 import org.jellyfin.androidtv.ui.playback.VideoQueueManager
@@ -39,6 +41,8 @@ val playbackModule = module {
 	single<MediaManager> { RewriteMediaManager(get(), get()) }
 
 	single { PlaybackLauncher(get(), get(), get(), get()) }
+	single { AdaptiveBitrateState() }
+	single { AdaptiveBitrateController(get(), get(), get()) }
 
 	single<HttpDataSource.Factory> {
 		val okHttpFactory = get<OkHttpFactory>()

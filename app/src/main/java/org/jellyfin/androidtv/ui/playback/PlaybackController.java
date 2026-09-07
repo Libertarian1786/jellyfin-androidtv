@@ -67,6 +67,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private Lazy<ApiClient> api = inject(ApiClient.class);
     private Lazy<DataRefreshService> dataRefreshService = inject(DataRefreshService.class);
     private Lazy<ReportingHelper> reportingHelper = inject(ReportingHelper.class);
+    private Lazy<AdaptiveBitrateController> adaptiveBitrate = inject(AdaptiveBitrateController.class);
     private final Lazy<InteractionTrackerViewModel> lazyInteractionTracker = inject(InteractionTrackerViewModel.class);
 
     List<BaseItemDto> mItems;
@@ -653,6 +654,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         if (mVideoManager != null) {
             mVideoManager.setMediaStreamInfo(api.getValue(), response);
+            adaptiveBitrate.getValue().onStreamStarted(this);
         }
 
         PlaybackControllerHelperKt.applyMediaSegments(this, item, () -> {
@@ -841,6 +843,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     public void stop() {
         refreshCurrentPosition();
         Timber.i("stop called at %s", mCurrentPosition);
+        adaptiveBitrate.getValue().stop();
         stopReportLoop();
         if (mPlaybackState != PlaybackState.IDLE && mPlaybackState != PlaybackState.UNDEFINED) {
             mPlaybackState = PlaybackState.IDLE;
@@ -985,6 +988,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                     mCurrentStreamInfo = response;
                     if (mVideoManager != null) {
                         mVideoManager.setMediaStreamInfo(api.getValue(), response);
+                        adaptiveBitrate.getValue().onStreamStarted(PlaybackController.this);
                         mVideoManager.start();
                     }
                 }
@@ -1293,6 +1297,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             bufferedPosition = getDuration();
 
         return bufferedPosition;
+    }
+
+    /** Link throughput estimate from the player in bits per second, or -1 when unavailable. */
+    public long getBandwidthEstimate() {
+        return hasInitializedVideoManager() ? mVideoManager.getBandwidthEstimate() : -1;
     }
 
     public long getCurrentPosition() {

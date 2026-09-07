@@ -132,6 +132,11 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var liveTvDirectPlayEnabled = booleanPreference("pref_live_direct", true)
 
 		/**
+		 * McCoy: run the adaptive bitrate (Auto) logic even when the server is on the home network. Testing aid.
+		 */
+		var adaptiveForceRemote = booleanPreference("mccoy_adaptive_force_remote", false)
+
+		/**
 		 * Shortcut used for changing the audio track
 		 */
 		var shortcutAudioTrack = intPreference("shortcut_audio_track", KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK)

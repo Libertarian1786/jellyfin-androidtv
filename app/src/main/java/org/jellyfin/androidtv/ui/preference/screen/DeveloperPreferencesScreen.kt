@@ -57,6 +57,12 @@ class DeveloperPreferencesScreen : OptionsFragment() {
 			}
 
 			checkbox {
+				setTitle(R.string.pref_adaptive_force_remote)
+				setContent(R.string.pref_adaptive_force_remote_description)
+				bind(userPreferences, UserPreferences.adaptiveForceRemote)
+			}
+
+			checkbox {
 				setTitle(R.string.prefer_exoplayer_ffmpeg)
 				setContent(R.string.prefer_exoplayer_ffmpeg_content)
 

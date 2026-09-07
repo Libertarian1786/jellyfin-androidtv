@@ -37,6 +37,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.analytics.AnalyticsListener;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.exoplayer.util.EventLogger;
 import androidx.media3.extractor.DefaultExtractorsFactory;
 import androidx.media3.extractor.ts.TsExtractor;
@@ -71,6 +72,7 @@ public class VideoManager {
     private PlaybackControllerNotifiable mPlaybackControllerNotifiable;
     private PlaybackOverlayFragmentHelper _helper;
     public ExoPlayer mExoPlayer;
+    private DefaultBandwidthMeter mBandwidthMeter;
     private PlayerView mExoPlayerView;
     private Handler mHandler = new Handler();
 
@@ -200,6 +202,10 @@ public class VideoManager {
      */
     private ExoPlayer.Builder configureExoplayerBuilder(Context context) {
         ExoPlayer.Builder exoPlayerBuilder = new ExoPlayer.Builder(context);
+        // Measures real download throughput of the media segments; the adaptive bitrate
+        // controller (AdaptiveBitrate.kt) reads it to decide when to step the quality up or down.
+        mBandwidthMeter = new DefaultBandwidthMeter.Builder(context).build();
+        exoPlayerBuilder.setBandwidthMeter(mBandwidthMeter);
         DefaultRenderersFactory defaultRendererFactory = new DefaultRenderersFactory(context);
         defaultRendererFactory.setEnableDecoderFallback(true);
         defaultRendererFactory.setExtensionRendererMode(determineExoPlayerExtensionRendererMode());
@@ -289,6 +295,11 @@ public class VideoManager {
             return bufferedPosition;
         }
         return -1;
+    }
+
+    /** ExoPlayer's estimate of the link throughput in bits per second, or -1 when no player exists. */
+    public long getBandwidthEstimate() {
+        return mBandwidthMeter == null ? -1 : mBandwidthMeter.getBitrateEstimate();
     }
 
     public long getCurrentPosition() {
