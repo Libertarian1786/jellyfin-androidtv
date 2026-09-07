@@ -36,5 +36,11 @@ enum class ZoomMode(
 	 * Enlarges the picture 35%: removes the top and bottom bars of a 2.40:1 film delivered inside a 16:9 frame.
 	 */
 	ZOOM_135(R.string.lbl_zoom_135),
+
+	/**
+	 * Widens the picture 7% without touching its height: fills the side bars of a 1.66:1 film
+	 * delivered in a 16:9 frame while keeping the full picture (slightly wider faces instead of a crop).
+	 */
+	STRETCH_WIDE_107(R.string.lbl_stretch_wide_107),
 }
 

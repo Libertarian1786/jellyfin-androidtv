@@ -264,7 +264,8 @@ public class VideoManager {
 
     public void setZoom(@NonNull ZoomMode mode) {
         mZoomMode = mode;
-        float scale = 1f;
+        float scaleX = 1f;
+        float scaleY = 1f;
         switch (mode) {
             case FIT:
                 mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
@@ -277,15 +278,19 @@ public class VideoManager {
                 break;
             case ZOOM_107:
                 mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-                scale = 1.07f;
+                scaleX = scaleY = 1.07f;
                 break;
             case ZOOM_120:
                 mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-                scale = 1.2f;
+                scaleX = scaleY = 1.2f;
                 break;
             case ZOOM_135:
                 mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-                scale = 1.35f;
+                scaleX = scaleY = 1.35f;
+                break;
+            case STRETCH_WIDE_107:
+                mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                scaleX = 1.07f;
                 break;
         }
         // The resize modes only act on the frame's shape. Bars that are encoded INTO a 16:9 frame
@@ -294,8 +299,8 @@ public class VideoManager {
         // bars off screen. Only the surface is scaled, so subtitles and the controls stay put.
         View surface = mExoPlayerView.getVideoSurfaceView();
         if (surface != null) {
-            surface.setScaleX(scale);
-            surface.setScaleY(scale);
+            surface.setScaleX(scaleX);
+            surface.setScaleY(scaleY);
         }
     }
 

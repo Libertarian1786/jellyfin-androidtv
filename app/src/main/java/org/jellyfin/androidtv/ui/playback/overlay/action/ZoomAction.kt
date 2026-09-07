@@ -49,7 +49,7 @@ class ZoomAction(
 			}
 
 			// Fixed zoom steps for bars that are encoded into the picture (see ZoomMode).
-			for (mode in listOf(ZoomMode.ZOOM_107, ZoomMode.ZOOM_120, ZoomMode.ZOOM_135)) {
+			for (mode in listOf(ZoomMode.STRETCH_WIDE_107, ZoomMode.ZOOM_107, ZoomMode.ZOOM_120, ZoomMode.ZOOM_135)) {
 				item(context.getString(mode.nameRes)) {
 					playbackController.setZoom(mode)
 				}.apply {
