@@ -2,6 +2,8 @@ package org.jellyfin.androidtv.ui.playback
 
 import android.os.Handler
 import android.os.Looper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.constant.AUTO_QUALITY
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.sdk.api.client.ApiClient
@@ -125,11 +127,12 @@ class AdaptiveBitrateController(
 		}.onFailure { Timber.w(it, "Adaptive bitrate: link measurement failed") }
 	}
 
-	private suspend fun measure(size: Int): Long {
+	// The SDK's OkHttp client reads the body synchronously, so this must not run on the main thread.
+	private suspend fun measure(size: Int): Long = withContext(Dispatchers.IO) {
 		val started = System.nanoTime()
 		val bytes = api.mediaInfoApi.getBitrateTestBytes(size).content.size
 		val seconds = (System.nanoTime() - started) / 1_000_000_000.0
-		return (bytes * 8 / seconds).toLong()
+		(bytes * 8 / seconds).toLong()
 	}
 
 	/** Called by [PlaybackController] whenever a stream (re)starts. Safe to call repeatedly. */
