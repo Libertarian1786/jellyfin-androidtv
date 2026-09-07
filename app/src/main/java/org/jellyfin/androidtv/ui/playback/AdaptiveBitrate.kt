@@ -57,6 +57,7 @@ private const val UP_HOLD_TICKS = 60
 private const val UP_COOLDOWN_MS = 120_000L
 private const val UP_AFTER_DOWN_MS = 180_000L
 private const val NEAR_END_MS = 2_000L
+private const val BUFFER_FULL_MAX_MS = 200_000L
 
 private fun ladderFloor(bps: Long): Int = LADDER_BPS.lastOrNull { it <= bps } ?: LADDER_BPS.first()
 private fun ladderIndex(bps: Int): Int = LADDER_BPS.indexOfFirst { it >= bps }.takeIf { it >= 0 } ?: LADDER_BPS.lastIndex
@@ -179,8 +180,13 @@ class AdaptiveBitrateController(
 		val position = c.currentPosition
 		val buffered = c.bufferedPosition
 		val duration = c.duration
-		val ahead = (buffered - position).coerceAtLeast(0L)
-		val nearEnd = duration > 0 && buffered >= duration - NEAR_END_MS
+		// PlaybackController reports the DURATION as the buffered position while the player is still
+		// preparing, which would read as "buffered to the end". The real buffer is at most a few
+		// minutes deep, so far from the end that value means "unknown" - treat it as empty so a
+		// stream that cannot even start on this link counts as stalled.
+		val bufferUnknown = duration > 0 && buffered >= duration - NEAR_END_MS && duration - position > BUFFER_FULL_MAX_MS
+		val ahead = if (bufferUnknown) 0L else (buffered - position).coerceAtLeast(0L)
+		val nearEnd = !bufferUnknown && duration > 0 && buffered >= duration - NEAR_END_MS
 		val estimate = c.bandwidthEstimate
 		val playing = c.isPlaying
 		val sinceStart = now() - startedAt
