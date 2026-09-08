@@ -292,6 +292,10 @@ public class VideoManager {
                 mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
                 scaleX = 1.07f;
                 break;
+            case STRETCH_WIDE_133:
+                mExoPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                scaleX = 4f / 3f;
+                break;
         }
         // The resize modes only act on the frame's shape. Bars that are encoded INTO a 16:9 frame
         // (most streaming rips) are invisible to them, so the zoom steps enlarge the video surface

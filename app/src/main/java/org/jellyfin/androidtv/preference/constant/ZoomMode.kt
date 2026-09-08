@@ -42,5 +42,12 @@ enum class ZoomMode(
 	 * delivered in a 16:9 frame while keeping the full picture (slightly wider faces instead of a crop).
 	 */
 	STRETCH_WIDE_107(R.string.lbl_stretch_wide_107),
+
+	/**
+	 * Widens the picture 33% without touching its height: a 4:3 picture fills a 16:9 screen with
+	 * nothing cropped top or bottom. Works for a real 4:3 file (which the player would otherwise
+	 * pillarbox) and for 4:3 painted inside a 16:9 frame.
+	 */
+	STRETCH_WIDE_133(R.string.lbl_stretch_wide_133),
 }
 
