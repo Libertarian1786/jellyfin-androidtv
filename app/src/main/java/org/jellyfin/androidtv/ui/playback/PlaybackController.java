@@ -878,7 +878,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
      */
     public void switchQualitySmoothly() {
         final BaseItemDto item = getCurrentlyPlayingItem();
-        if (!hasInitializedVideoManager() || !hasFragment() || item == null || mCurrentStreamInfo == null) {
+        if (!hasInitializedVideoManager() || !hasFragment() || item == null || mCurrentStreamInfo == null || isLiveTv) {
             refreshStream();
             return;
         }
@@ -888,9 +888,21 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         playbackManager.getValue().getVideoStreamInfo(mFragment, options, position * 10000, new Response<StreamInfo>(mFragment.getLifecycle()) {
             @Override
             public void onResponse(StreamInfo response) {
-                if (!isActive() || mVideoManager == null) return;
+                if (!isActive() || mVideoManager == null || mFragment == null) return;
                 mCurrentOptions = options;
                 mVideoManager.stopPlayback();
+                // Arm exactly what the IDLE branch of play() arms before a stream starts. The
+                // critical one is startSpinner(): onProgress() only performs the initial seek to
+                // mStartPosition while spinnerOff is false, so skipping it silently restarts the
+                // item from the beginning instead of resuming where the viewer was.
+                mSeekPosition = position;
+                mCurrentPosition = 0;
+                finishedInitialSeek = false;
+                startSpinner();
+                mFragment.setFadingEnabled(false);
+                mPlaybackState = PlaybackState.BUFFERING;
+                mFragment.setPlayPauseActionState(0);
+                mFragment.setCurrentTime(position);
                 startItem(item, position, response);
             }
 
