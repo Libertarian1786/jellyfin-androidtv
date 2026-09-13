@@ -237,6 +237,10 @@ public class VideoManager {
         // Stock media3 values are min/max 50 s, start after 1 s, resume-after-stall after 2 s -
         // built for stable broadband. A brief bandwidth dip that outlasts the buffer stalls
         // playback, so we buffer further ahead and demand more before (re)starting.
+        // bufferForPlaybackMs is media3's own default of 2.5 s rather than the 5 s I first chose:
+        // it is how much media must be in hand before playback STARTS, so it is paid in full on
+        // every quality swap, and 60 s of minimum buffer behind it makes the larger value pointless.
+        // Robustness against mid-film stalls comes from bufferForPlaybackAfterRebufferMs, still 15 s.
         // prioritizeTimeOverSizeThresholds=false keeps targetBufferBytes as a HARD cap, which
         // protects the 2 GB Chromecasts from over-buffering at 4K bitrates. Constraints the
         // library enforces: playback <= min, afterRebuffer <= min, min <= max.
@@ -244,7 +248,7 @@ public class VideoManager {
                 .setBufferDurationsMs(
                         /* minBufferMs */ 60_000,
                         /* maxBufferMs */ 180_000,
-                        /* bufferForPlaybackMs */ 5_000,
+                        /* bufferForPlaybackMs */ 2_500,
                         /* bufferForPlaybackAfterRebufferMs */ 15_000)
                 .setTargetBufferBytes(160 * 1024 * 1024)
                 .setPrioritizeTimeOverSizeThresholds(false)
