@@ -268,7 +268,11 @@ class AdaptiveBitrateController(
 			return
 		}
 		val next = LADDER_BPS.getOrNull(tier + 1)
-		val roomToClimb = playing && next != null && (ahead > UP_AHEAD_MS || nearEnd) && estimate > next * UP_HEADROOM
+		// Only climb while the server is actually transcoding. When the stream is direct playing the
+		// viewer already has the original file and a higher cap cannot improve it, so the swap would
+		// be pure cost. Stepping DOWN from direct play still matters: it forces a transcode that fits.
+		val roomToClimb = playing && c.isTranscoding && next != null &&
+			(ahead > UP_AHEAD_MS || nearEnd) && estimate > next * UP_HEADROOM
 		if (roomToClimb) upTicks++ else upTicks = 0
 		val upCooldown = if (lastSwitchWasDown) UP_AFTER_DOWN_MS else UP_COOLDOWN_MS
 		if (next != null && upTicks >= UP_HOLD_TICKS && sinceSwitch > upCooldown) {
