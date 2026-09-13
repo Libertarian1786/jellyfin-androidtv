@@ -866,6 +866,41 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         play(mCurrentPosition);
     }
 
+    /**
+     * Changes streaming quality without the blank gap a full restart leaves on screen.
+     *
+     * refreshStream() stops the player first, so nothing is on screen for the whole server round
+     * trip and the new transcode's start-up. Here the current stream keeps playing out of its
+     * buffer while the new stream info is fetched, and the player is only swapped once the new URL
+     * is in hand. The adaptive controller only calls this while buffer remains, so the swap lands
+     * inside material the player is already holding. Falls back to a plain restart if anything
+     * needed for the swap is missing, and keeps the current stream if the request fails.
+     */
+    public void switchQualitySmoothly() {
+        final BaseItemDto item = getCurrentlyPlayingItem();
+        if (!hasInitializedVideoManager() || !hasFragment() || item == null || mCurrentStreamInfo == null) {
+            refreshStream();
+            return;
+        }
+        refreshCurrentPosition();
+        final long position = mCurrentPosition;
+        final VideoOptions options = buildExoPlayerOptions(null, null, item);
+        playbackManager.getValue().getVideoStreamInfo(mFragment, options, position * 10000, new Response<StreamInfo>(mFragment.getLifecycle()) {
+            @Override
+            public void onResponse(StreamInfo response) {
+                if (!isActive() || mVideoManager == null) return;
+                mCurrentOptions = options;
+                mVideoManager.stopPlayback();
+                startItem(item, position, response);
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                Timber.e(exception, "Adaptive bitrate: could not prepare the new stream, staying on the current one");
+            }
+        });
+    }
+
     public void endPlayback(Boolean closeActivity) {
         if (closeActivity && mFragment != null) {
             mFragment.closePlayer();

@@ -51,7 +51,7 @@ private const val HISTORY = 10
 private const val WARMUP_MS = 15_000L
 private const val STALL_TICKS = 3
 private const val STALL_AHEAD_MS = 1_500L
-private const val STALL_COOLDOWN_MS = 10_000L
+private const val STALL_COOLDOWN_MS = 30_000L
 private const val DRAIN_AHEAD_MS = 15_000L
 private const val DRAIN_DROP_MS = 3_000L
 private const val DRAIN_LINK_HEADROOM = 1.25
@@ -59,6 +59,7 @@ private const val DOWN_COOLDOWN_MS = 20_000L
 private const val DOWN_SAFETY = 0.7
 private const val UP_AHEAD_MS = 40_000L
 private const val UP_HEADROOM = 1.6
+private const val UP_MIN_GAIN = 1.5
 private const val UP_HOLD_TICKS = 60
 private const val UP_COOLDOWN_MS = 120_000L
 private const val UP_AFTER_DOWN_MS = 180_000L
@@ -112,6 +113,7 @@ class AdaptiveBitrateController(
 	private var startedAt = 0L
 	private var lastSwitchAt = 0L
 	private var lastSwitchWasDown = false
+	private var hasPlayed = false
 	private var stallTicks = 0
 	private var upTicks = 0
 	private val aheadHistory = ArrayDeque<Long>()
@@ -185,6 +187,7 @@ class AdaptiveBitrateController(
 		if (state.capBps == null) state.capBps = state.currentCapBps()
 		controller = playbackController
 		startedAt = now()
+		hasPlayed = false
 		stallTicks = 0
 		upTicks = 0
 		aheadHistory.clear()
@@ -227,14 +230,23 @@ class AdaptiveBitrateController(
 		val nearEnd = !bufferUnknown && duration > 0 && buffered >= duration - NEAR_END_MS
 		val estimate = c.bandwidthEstimate
 		val playing = c.isPlaying
+		// A stream that has not begun playing yet is STARTING UP, not stalling: the player is not
+		// playing and holds no buffer, which looks identical to a stall. Counting that as one made
+		// every switch trigger the next one about 15 s later - the controller walked itself down to
+		// the bottom rung on a fast home network (seen 2026-09-12). The warmup clock therefore
+		// starts when playback actually begins, and nothing may step down before then.
+		if (playing && !hasPlayed) {
+			hasPlayed = true
+			startedAt = now()
+		}
 		val sinceStart = now() - startedAt
 		val sinceSwitch = now() - lastSwitchAt
 		aheadHistory.addLast(ahead)
 		if (aheadHistory.size > HISTORY) aheadHistory.removeFirst()
 
-		// Stalled: not paused, not playing, and nothing buffered to play.
-		if (!playing && ahead < STALL_AHEAD_MS && !nearEnd) stallTicks++ else stallTicks = 0
-		if (sinceStart < WARMUP_MS) return
+		// Stalled: it was playing, has now stopped, and has nothing buffered to play.
+		stallTicks = if (hasPlayed && !playing && ahead < STALL_AHEAD_MS && !nearEnd) stallTicks + 1 else 0
+		if (!hasPlayed || sinceStart < WARMUP_MS) return
 
 		val tier = ladderIndex(cap)
 		if (stallTicks >= STALL_TICKS && tier > 0 && sinceSwitch > STALL_COOLDOWN_MS) {
@@ -263,11 +275,14 @@ class AdaptiveBitrateController(
 			// Jump to the highest rung the measured link carries with the same margin, so a fast
 			// connection reaches full quality in one step instead of one rung every few minutes.
 			val target = maxOf(next, ladderFloor((estimate / UP_HEADROOM).toLong()))
-			switchTo(
-				target,
-				"the link has held %s for %d s (buffer %.1f s)".format(mbit(estimate), UP_HOLD_TICKS, ahead / 1000.0),
-				down = false,
-			)
+			// Climbing costs a stream swap, so only take a step big enough to be worth one.
+			if (target >= cap * UP_MIN_GAIN) {
+				switchTo(
+					target,
+					"the link has held %s for %d s (buffer %.1f s)".format(mbit(estimate), UP_HOLD_TICKS, ahead / 1000.0),
+					down = false,
+				)
+			}
 		}
 	}
 
@@ -288,8 +303,10 @@ class AdaptiveBitrateController(
 		upTicks = 0
 		stallTicks = 0
 		aheadHistory.clear()
-		// Restarts the stream from the current position; createDeviceProfile picks up the new cap.
-		c.refreshStream()
+		hasPlayed = false
+		// Swaps to a stream at the new cap while the current one plays on out of its buffer, so the
+		// change is not a visible restart; createDeviceProfile picks up the new cap.
+		c.switchQualitySmoothly()
 	}
 
 	private fun now() = System.currentTimeMillis()
