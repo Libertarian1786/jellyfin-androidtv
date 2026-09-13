@@ -258,6 +258,14 @@ public class VideoManager {
         return mExoPlayer != null;
     }
 
+    /**
+     * While true the view keeps showing the last rendered frame through a player reset instead of
+     * going black. Only switched on around a quality swap, so ordinary stops still clear the screen.
+     */
+    public void setKeepContentOnReset(boolean keep) {
+        if (mExoPlayerView != null) mExoPlayerView.setKeepContentOnPlayerReset(keep);
+    }
+
     public @NonNull ZoomMode getZoomMode() {
         return mZoomMode;
     }
@@ -410,6 +418,17 @@ public class VideoManager {
     }
 
     public void setMediaStreamInfo(ApiClient api, StreamInfo streamInfo) {
+        setMediaStreamInfo(api, streamInfo, -1);
+    }
+
+    /**
+     * @param startPositionMs where the player should PREPARE, or a negative value for the player's
+     *   own default of zero. This matters for a transcoded HLS stream: preparing at zero makes the
+     *   server start an ffmpeg pass at the beginning of the item, and the seek that follows makes it
+     *   kill that pass and start another at the real position. Preparing in the right place costs
+     *   one transcode start-up instead of two plus a seek.
+     */
+    public void setMediaStreamInfo(ApiClient api, StreamInfo streamInfo, long startPositionMs) {
         String path = streamInfo.getMediaUrl();
         if (path == null) {
             Timber.w("Video path is null cannot continue");
@@ -442,7 +461,8 @@ public class VideoManager {
                     .setSubtitleConfigurations(subtitleConfigurations)
                     .build();
 
-            mExoPlayer.setMediaItem(mediaItem);
+            if (startPositionMs >= 0) mExoPlayer.setMediaItem(mediaItem, startPositionMs);
+            else mExoPlayer.setMediaItem(mediaItem);
             mExoPlayer.prepare();
         } catch (IllegalStateException e) {
             Timber.e(e, "Unable to set video path.  Probably backing out.");

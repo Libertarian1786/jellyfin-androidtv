@@ -608,6 +608,15 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private void startItem(BaseItemDto item, long position, StreamInfo response) {
+        startItem(item, position, response, false);
+    }
+
+    /**
+     * @param seeklessStart prepare the player AT position rather than at zero and then seeking.
+     *   Used by the quality swap only; the ordinary start and resume path keeps the seek, which is
+     *   the behaviour the rest of this class and onProgress() are built around.
+     */
+    private void startItem(BaseItemDto item, long position, StreamInfo response, boolean seeklessStart) {
         if (!hasInitializedVideoManager() || !hasFragment()) {
             Timber.w("Error - attempting to play without:%s%s", hasInitializedVideoManager() ? "" : " [videoManager]", hasFragment() ? "" : " [overlay fragment]");
             return;
@@ -615,7 +624,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         mCurrentOptions.setAudioStreamIndex(null); // reset audio stream index to allow auto selection on new item
 
-        mStartPosition = position;
+        // A seekless start is already positioned, so leave mStartPosition at zero: onProgress()
+        // then takes its "nothing to seek to" branch, stops the spinner and reports normally.
+        mStartPosition = seeklessStart ? 0 : position;
         mCurrentStreamInfo = response;
         mCurrentOptions.setMediaSourceId(response.getMediaSource().getId());
 
@@ -654,7 +665,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         if (mFragment != null) mFragment.updateDisplay();
 
         if (mVideoManager != null) {
-            mVideoManager.setMediaStreamInfo(api.getValue(), response);
+            mVideoManager.setMediaStreamInfo(api.getValue(), response, seeklessStart ? position : -1);
             adaptiveBitrate.getValue().onStreamStarted(this);
         }
 
@@ -890,6 +901,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             public void onResponse(StreamInfo response) {
                 if (!isActive() || mVideoManager == null || mFragment == null) return;
                 mCurrentOptions = options;
+                // hold the last frame through the reset; cleared again once the new stream is ready
+                mVideoManager.setKeepContentOnReset(true);
                 mVideoManager.stopPlayback();
                 // Arm exactly what the IDLE branch of play() arms before a stream starts. The
                 // critical one is startSpinner(): onProgress() only performs the initial seek to
@@ -903,7 +916,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 mPlaybackState = PlaybackState.BUFFERING;
                 mFragment.setPlayPauseActionState(0);
                 mFragment.setCurrentTime(position);
-                startItem(item, position, response);
+                startItem(item, position, response, true);
             }
 
             @Override
@@ -1241,6 +1254,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     @Override
     public void onPrepared() {
+        // a quality swap asks the view to hold its last frame; the new stream is up, so release it
+        if (mVideoManager != null) mVideoManager.setKeepContentOnReset(false);
         if (mPlaybackState == PlaybackState.BUFFERING) {
             if (mFragment != null) {
                 mFragment.setFadingEnabled(true);
