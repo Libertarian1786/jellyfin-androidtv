@@ -91,6 +91,18 @@ private const val CROSSOVER_LEAD_MS = 20_000L
 private const val CROSSOVER_READY_MS = 4_000L
 /** Give up waiting for the replacement after this and fall back to the restarting swap. */
 private const val CROSSOVER_TIMEOUT_MS = 40_000L
+
+/**
+ * Only pre-buffer a replacement when the buffer is at least this deep. Pre-buffering pays for the
+ * same seconds of film twice, which is only affordable out of genuine spare capacity.
+ */
+private const val CROSSOVER_MIN_BUFFER_MS = 60_000L
+
+/**
+ * After a cross-over the new stream holds only what was pre-buffered, so a shallow buffer is
+ * expected rather than alarming. Nothing but a real stall may act during this.
+ */
+private const val CROSSOVER_SETTLE_MS = 60_000L
 private const val NEAR_END_MS = 2_000L
 private const val BUFFER_FULL_MAX_MS = 200_000L
 
@@ -151,6 +163,9 @@ class AdaptiveBitrateController(
 	private var stallTicks = 0
 	private var upTicks = 0
 	private val aheadHistory = ArrayDeque<Long>()
+	private var lastAhead = 0L
+	/** How long after a (re)start the buffer may be shallow without anyone acting on it. */
+	private var settleMs = WARMUP_MS
 
 	private val enabled: Boolean
 		get() = userPreferences[UserPreferences.maxBitrate] == AUTO_QUALITY
@@ -260,6 +275,7 @@ class AdaptiveBitrateController(
 		hasPlayed = false
 		stallTicks = 0
 		upTicks = 0
+		settleMs = WARMUP_MS
 		aheadHistory.clear()
 		Timber.i(
 			"Adaptive bitrate: watching the stream, cap %s (link probe %s)",
@@ -272,6 +288,16 @@ class AdaptiveBitrateController(
 				if (ticker === this) handler.postDelayed(this, TICK_MS)
 			}
 		}.also { handler.postDelayed(it, TICK_MS) }
+	}
+
+	/**
+	 * Called instead of [onStreamStarted] when the new stream arrived by cross-over. Same reset, but
+	 * with a longer settle window: playback never stopped, so the only thing that is new is a buffer
+	 * that starts at whatever was pre-buffered and needs time to fill.
+	 */
+	fun onCrossOverCompleted(playbackController: PlaybackController) {
+		onStreamStarted(playbackController)
+		settleMs = CROSSOVER_SETTLE_MS
 	}
 
 	fun stop() {
@@ -312,6 +338,7 @@ class AdaptiveBitrateController(
 		val sinceSwitch = now() - lastSwitchAt
 		aheadHistory.addLast(ahead)
 		if (aheadHistory.size > HISTORY) aheadHistory.removeFirst()
+		lastAhead = ahead
 
 		// Stalled: it was playing, has now stopped, and has nothing buffered to play.
 		stallTicks = if (hasPlayed && !playing && ahead < STALL_AHEAD_MS && !nearEnd) stallTicks + 1 else 0
@@ -354,7 +381,7 @@ class AdaptiveBitrateController(
 				else -> return
 			}
 		}
-		if (!hasPlayed || sinceStart < WARMUP_MS) return
+		if (!hasPlayed) return
 
 		val tier = ladderIndex(cap)
 		val streamBps = currentStreamBps(c, cap)
@@ -370,6 +397,11 @@ class AdaptiveBitrateController(
 			)
 			return
 		}
+		// A stream that has just started - or has just been crossed over to - holds only a shallow
+		// buffer, and that is normal rather than a warning. A genuine stall is handled above, so
+		// nothing is lost by waiting. Build 31 had no such window after a cross-over and stepped
+		// straight back down 16 s later on a buffer that was simply still filling.
+		if (sinceStart < settleMs) return
 		// Buffer-driven step down. A buffer of 40 s falling fast is an emergency; the same 40 s
 		// falling slowly is not, so the trigger is when it is PROJECTED to run out rather than a
 		// fixed level, with an absolute floor underneath. The link is measured from the buffer
@@ -459,7 +491,14 @@ class AdaptiveBitrateController(
 		stallTicks = 0
 		aheadHistory.clear()
 		hasPlayed = false
-		if (userPreferences[UserPreferences.adaptivePreloadSwitch]) {
+		// Cross over only on the way UP, and only with a deep buffer in hand. Pre-buffering fetches
+		// the same seconds of film twice, so it needs spare capacity to be worth anything - and on a
+		// step DOWN there is none by definition, because stepping down is what we do when the link
+		// cannot carry even what is playing. Build 31 crossed over in both directions and the
+		// downward one arrived with 5 s of buffer. The restarting swap below costs nothing extra and
+		// keeps handling those. Upward changes are also the ones that visibly stutter today.
+		val canCrossOver = !down && lastAhead >= CROSSOVER_MIN_BUFFER_MS
+		if (canCrossOver && userPreferences[UserPreferences.adaptivePreloadSwitch]) {
 			// Queue the new quality to begin a little ahead of here and let the player pre-buffer it
 			// while this stream carries on, then cross over when playback reaches that point. The
 			// tick loop above drives the rest; state.capBps only moves when the cross-over lands, so

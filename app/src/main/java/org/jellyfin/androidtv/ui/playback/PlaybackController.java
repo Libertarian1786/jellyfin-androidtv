@@ -927,13 +927,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     /** Crosses over to the queued stream. The picture continues; nothing is torn down. */
     public boolean completeCrossOver() {
         if (mQueuedStreamInfo == null || !hasInitializedVideoManager()) return false;
-        if (!mVideoManager.crossOverToReplacement()) return false;
+        long startedAt = mQueuedStartMs;
+        if (!mVideoManager.crossOverToReplacement(startedAt)) return false;
         mCurrentStreamInfo = mQueuedStreamInfo;
         if (mQueuedOptions != null) mCurrentOptions = mQueuedOptions;
         mQueuedStreamInfo = null;
         mQueuedOptions = null;
         mQueuedStartMs = -1;
-        adaptiveBitrate.getValue().onStreamStarted(this);
+        adaptiveBitrate.getValue().onCrossOverCompleted(this);
         return true;
     }
 

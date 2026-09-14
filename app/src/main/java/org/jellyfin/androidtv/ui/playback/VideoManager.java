@@ -81,6 +81,12 @@ public class VideoManager {
 
     private long mMetaDuration = -1;
     private long lastExoPlayerPosition = -1;
+    /**
+     * Film time at which the item now playing BEGINS. Normally zero. After a cross-over it is the
+     * clip start of the replacement, because a clipped source reports position 0 at its own start
+     * rather than at the start of the film, and everything outside this class works in film time.
+     */
+    private long mTimelineOffsetMs = 0;
     private boolean nightModeEnabled;
 
     public boolean isContracted = false;
@@ -325,7 +331,10 @@ public class VideoManager {
     }
 
     public long getDuration() {
-        return isInitialized() && mExoPlayer.getDuration() > 0 ? mExoPlayer.getDuration() : mMetaDuration;
+        // A clipped replacement knows only its own length, so add back what it starts at.
+        return isInitialized() && mExoPlayer.getDuration() > 0
+                ? mExoPlayer.getDuration() + mTimelineOffsetMs
+                : mMetaDuration;
     }
 
     public long getBufferedPosition() {
@@ -333,6 +342,7 @@ public class VideoManager {
             return -1;
 
         long bufferedPosition = mExoPlayer.getBufferedPosition();
+        if (bufferedPosition > -1) bufferedPosition += mTimelineOffsetMs;
 
         if (bufferedPosition > -1 && bufferedPosition < getDuration()) {
             return bufferedPosition;
@@ -370,11 +380,17 @@ public class VideoManager {
         return mExoPlayer.getTotalBufferedDuration() - (mExoPlayer.getBufferedPosition() - mExoPlayer.getCurrentPosition());
     }
 
-    /** Crosses over to the queued stream and drops the old one. */
-    public boolean crossOverToReplacement() {
+    /**
+     * Crosses over to the queued stream and drops the old one. startPositionMs is the film time the
+     * replacement begins at: it becomes the timeline offset, because the clipped source counts from
+     * zero at that point and everything above this class works in film time.
+     */
+    public boolean crossOverToReplacement(long startPositionMs) {
         if (!isInitialized() || mExoPlayer.getMediaItemCount() < 2) return false;
         mExoPlayer.seekToNextMediaItem();
         if (mExoPlayer.getCurrentMediaItemIndex() > 0) mExoPlayer.removeMediaItem(0);
+        mTimelineOffsetMs = Math.max(0, startPositionMs);
+        lastExoPlayerPosition = -1;
         if (mLoadControl != null) mLoadControl.setPreloadAllowed(false);
         mExoPlayer.setPreloadConfiguration(ExoPlayer.PreloadConfiguration.DEFAULT);
         Timber.i("Adaptive bitrate: crossed over to the queued stream");
@@ -403,11 +419,11 @@ public class VideoManager {
 
     public long getCurrentPosition() {
         if (mExoPlayer == null || !isPlaying()) {
-            return lastExoPlayerPosition == -1 ? 0 : lastExoPlayerPosition;
+            return lastExoPlayerPosition == -1 ? 0 : lastExoPlayerPosition + mTimelineOffsetMs;
         } else {
             long mExoPlayerCurrentPosition = mExoPlayer.getCurrentPosition();
             lastExoPlayerPosition = mExoPlayerCurrentPosition;
-            return mExoPlayerCurrentPosition;
+            return mExoPlayerCurrentPosition + mTimelineOffsetMs;
         }
     }
 
@@ -461,7 +477,7 @@ public class VideoManager {
             return -1;
 
         Timber.i("Exo length in seek is: %d", getDuration());
-        mExoPlayer.seekTo(pos);
+        mExoPlayer.seekTo(Math.max(0, pos - mTimelineOffsetMs));
         return pos;
     }
 
@@ -516,6 +532,8 @@ public class VideoManager {
                     .setSubtitleConfigurations(subtitleConfigurations)
                     .build();
 
+            mTimelineOffsetMs = 0;
+            lastExoPlayerPosition = -1;
             if (startPositionMs >= 0) mExoPlayer.setMediaItem(mediaItem, startPositionMs);
             else mExoPlayer.setMediaItem(mediaItem);
             mExoPlayer.prepare();
