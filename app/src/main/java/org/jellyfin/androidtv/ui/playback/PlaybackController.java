@@ -877,6 +877,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         play(mCurrentPosition);
     }
 
+    /** How long to let the server get ahead before swapping streams. */
+    private static final long PREWARM_TIMEOUT_MS = 15_000;
+
     private StreamInfo mQueuedStreamInfo;
     private VideoOptions mQueuedOptions;
     private long mQueuedStartMs = -1;
@@ -985,9 +988,21 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             @Override
             public void onResponse(StreamInfo response) {
                 if (!isActive() || mVideoManager == null || mFragment == null) return;
+                // Get the server producing BEFORE anything is torn down. Jellyfin needs 10-15 s to
+                // spawn ffmpeg for a newly requested stream, and that is most of what the viewer sees
+                // as a freeze. The stream we are leaving is still playing out of its buffer while
+                // this runs, so it costs nothing, and the swap below then only has to wait for the
+                // player's own 2.5 s start buffer.
+                playbackManager.getValue().prewarmStream(mFragment, response, position, PREWARM_TIMEOUT_MS,
+                        () -> completeSmoothSwitch(item, position, response, abandoned, options));
+            }
+
+            private void completeSmoothSwitch(BaseItemDto swapItem, long swapPosition, StreamInfo response,
+                                              StreamInfo leaving, VideoOptions swapOptions) {
+                if (!isActive() || mVideoManager == null || mFragment == null) return;
                 // Stop the encode we are leaving, or it competes with the one we are starting.
-                playbackManager.getValue().stopTranscode(mFragment, abandoned);
-                mCurrentOptions = options;
+                playbackManager.getValue().stopTranscode(mFragment, leaving);
+                mCurrentOptions = swapOptions;
                 // hold the last frame through the reset; cleared again once the new stream is ready
                 mVideoManager.setKeepContentOnReset(true);
                 mVideoManager.stopPlayback();
@@ -995,15 +1010,15 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 // critical one is startSpinner(): onProgress() only performs the initial seek to
                 // mStartPosition while spinnerOff is false, so skipping it silently restarts the
                 // item from the beginning instead of resuming where the viewer was.
-                mSeekPosition = position;
+                mSeekPosition = swapPosition;
                 mCurrentPosition = 0;
                 finishedInitialSeek = false;
                 startSpinner();
                 mFragment.setFadingEnabled(false);
                 mPlaybackState = PlaybackState.BUFFERING;
                 mFragment.setPlayPauseActionState(0);
-                mFragment.setCurrentTime(position);
-                startItem(item, position, response, true);
+                mFragment.setCurrentTime(swapPosition);
+                startItem(swapItem, swapPosition, response, true);
             }
 
             @Override

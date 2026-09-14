@@ -75,6 +75,32 @@ class PlaybackManager(
 	}
 
 	/**
+	 * Gets the server producing the new stream BEFORE the player is torn down, then runs [onReady] on
+	 * the main thread. The stream being replaced keeps playing out of its own buffer throughout, so
+	 * this costs the viewer nothing and takes the 10-15 s ffmpeg spawn off the changeover's critical
+	 * path. [onReady] runs exactly once, whether the warm-up succeeded, failed or timed out.
+	 */
+	fun prewarmStream(
+		lifecycleOwner: LifecycleOwner,
+		stream: StreamInfo,
+		startPositionMs: Long,
+		timeoutMs: Long,
+		onReady: Runnable,
+	) = lifecycleOwner.lifecycleScope.launch {
+		val warmed = try {
+			StreamPrewarmer.prewarm(stream, startPositionMs, timeoutMs)
+		} catch (error: Exception) {
+			Timber.w(error, "Adaptive bitrate: pre-warm failed, changing quality anyway")
+			false
+		}
+		Timber.i(
+			"Adaptive bitrate: the new stream %s before the swap",
+			if (warmed) "is already producing" else "was not warmed in time",
+		)
+		onReady.run()
+	}
+
+	/**
 	 * Tells the server to stop an encode we have finished with. Every quality change asks for a new
 	 * stream, and until now nothing ever stopped the old one: [changeVideoStream] is the only caller
 	 * of stopEncodingProcess and it is only used for an audio or subtitle change. So each swap left
