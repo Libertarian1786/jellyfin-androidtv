@@ -109,6 +109,17 @@ private const val CROSSOVER_MIN_BUFFER_DOWN_MS = 35_000L
 private const val LINK_MEMORY_MS = 300_000L
 
 /**
+ * Step down THIS far ahead of running out when the change can be made smoothly. The ordinary
+ * trigger waits until 45 s from empty, which on a gentle drain is not reached until the buffer is
+ * down to about 11 s - too late to cross over, so every downward change took the restart. A smooth
+ * change is nearly free, so it is taken while there is still buffer to make it with.
+ */
+private const val CROSSOVER_ACT_BEFORE_EMPTY_MS = 180_000L
+
+/** Seconds of continuous draining before the early step down fires, so a brief dip cannot. */
+private const val DRAIN_HOLD_TICKS = 15
+
+/**
  * After a cross-over the new stream holds only what was pre-buffered, so a shallow buffer is
  * expected rather than alarming. Nothing but a real stall may act during this.
  */
@@ -177,6 +188,8 @@ class AdaptiveBitrateController(
 	/** The best link we have actually measured lately - the ceiling for a climb taken blind. */
 	private var bestLinkBps = 0L
 	private var bestLinkAt = 0L
+	/** Consecutive ticks the buffer has been genuinely going down. */
+	private var drainTicks = 0
 	/** How long after a (re)start the buffer may be shallow without anyone acting on it. */
 	private var settleMs = WARMUP_MS
 
@@ -426,10 +439,18 @@ class AdaptiveBitrateController(
 		// low but briefly refilling, and then computed the target from a measurement that is not valid
 		// in that state, which read 19.6 Mbit/s on a 3 Mbit link and produced a cascade of small steps.
 		val reallyDraining = drain != null && drain > DRAIN_NOISE
+		drainTicks = if (reallyDraining) drainTicks + 1 else 0
 		val runningOut = reallyDraining && (ahead < BUFFER_FLOOR_MS || emptyingMs < ACT_BEFORE_EMPTY_MS)
 		val nearlyGone = ahead < BUFFER_CRITICAL_MS && !nearEnd
+		// Deep enough to hand over without the picture noticing, and the change would be smooth.
+		// Acting here rather than at the last responsible moment is the whole point: the late
+		// triggers below fire with 20 s or 8 s in hand, which is not enough to cross over with.
+		val deepEnough = reallyDraining && ahead >= CROSSOVER_MIN_BUFFER_DOWN_MS
+		val smoothDown = deepEnough && drainTicks >= DRAIN_HOLD_TICKS &&
+			emptyingMs < CROSSOVER_ACT_BEFORE_EMPTY_MS &&
+			userPreferences[UserPreferences.adaptivePreloadSwitch]
 		val settledEnough = !settling || (reallyDraining && ahead < BUFFER_CRITICAL_MS)
-		if (playing && settledEnough && (runningOut || nearlyGone) && tier > 0 && sinceSwitch > DOWN_COOLDOWN_MS) {
+		if (playing && settledEnough && (runningOut || nearlyGone || smoothDown) && tier > 0 && sinceSwitch > DOWN_COOLDOWN_MS) {
 			// Trust the measurement only while draining; otherwise fall back to a single rung.
 			val target = if (reallyDraining && measuredLink != null) {
 				stepDownTarget(tier, measuredLink)
@@ -437,6 +458,9 @@ class AdaptiveBitrateController(
 				LADDER_BPS[tier - 1]
 			}
 			val why = when {
+				smoothDown && !runningOut && !nearlyGone ->
+					"the buffer has been draining for %d s, %.0f s left and emptying in about %.0f s, link measures %s"
+						.format(drainTicks, ahead / 1000.0, emptyingMs / 1000.0, mbit(measuredLink ?: 0L))
 				reallyDraining && emptyingMs != Long.MAX_VALUE ->
 					"%.0f s of buffer left, emptying in about %.0f s, link measures %s"
 						.format(ahead / 1000.0, emptyingMs / 1000.0, mbit(measuredLink ?: 0L))
@@ -449,7 +473,7 @@ class AdaptiveBitrateController(
 			// branch fires while the buffer is still deep. The floor, critical and stall branches fire
 			// at or under the lead, where the playhead would reach the hand-over point with nothing
 			// left to show; those keep the restart.
-			switchTo(target, why, down = true, mayCrossOver = reallyDraining && ahead >= CROSSOVER_MIN_BUFFER_DOWN_MS)
+			switchTo(target, why, down = true, mayCrossOver = deepEnough)
 			return
 		}
 		if (settling) return
@@ -525,6 +549,7 @@ class AdaptiveBitrateController(
 		lastSwitchWasDown = down
 		upTicks = 0
 		stallTicks = 0
+		drainTicks = 0
 		aheadHistory.clear()
 		hasPlayed = false
 		// Cross over in EITHER direction, but only out of a buffer deep enough to play out of while
