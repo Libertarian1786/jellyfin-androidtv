@@ -19,11 +19,15 @@ import java.net.URI
  * Adaptive bitrate for the "Auto" quality setting.
  *
  * Jellyfin sends a single stream at the bitrate the client asks for, so there is no ladder for the
- * player to switch between on its own. Instead the controller below watches the buffer and
- * ExoPlayer's throughput estimate once a second and, when the buffer is emptying faster than it
- * fills (or the player has actually stalled), lowers the cap and restarts the stream from the
- * current position - the same thing the quality picker does by hand. After the link has been
- * comfortably faster than the next step for a while it climbs back up, one step at a time.
+ * player to switch between on its own. Instead the controller below watches the BUFFER once a
+ * second and works the link out from it: over a window of W seconds of playback the player consumed
+ * W seconds of media and received W plus however much the buffer gained or lost, so what arrived is
+ * stream_bitrate * (W + delta) / W. That is an observation, unlike ExoPlayer's throughput meter,
+ * which reported 246.8 Mbit/s on a 3 Mbit link and is no longer consulted for any decision.
+ *
+ * Draining means the link is below the stream rate, so step down to a rung that fits. Filling means
+ * it is above, so climb to what it supports. A full buffer measures nothing at all, because the
+ * player stops fetching, so from there we climb one rung at a time to discover the headroom.
  *
  * It only runs when the server is reached over the internet; on the home network there is no cap.
  */
@@ -55,8 +59,14 @@ private const val STALL_COOLDOWN_MS = 30_000L
 /** Step down once the buffer is projected to run out within this, so the swap has room. */
 private const val ACT_BEFORE_EMPTY_MS = 45_000L
 
-/** Step down regardless below this, however gentle the drain looks. */
+/** Step down when the buffer is draining and has fallen this low. */
 private const val BUFFER_FLOOR_MS = 20_000L
+
+/** Step down at this depth even if the buffer looks momentarily steady: it is nearly gone. */
+private const val BUFFER_CRITICAL_MS = 8_000L
+
+/** Treat the buffer as full, and therefore uninformative, at this depth. */
+private const val BUFFER_FULL_MS = 120_000L
 
 /** Ignore drains smaller than this fraction of real time as measurement noise. */
 private const val DRAIN_NOISE = 0.05
@@ -186,6 +196,8 @@ class AdaptiveBitrateController(
 	 */
 	private fun measuredLinkBps(streamBps: Long): Long? {
 		val drain = drainPerSecond() ?: return null
+		// Meaningless once the buffer is full, because the player stops fetching and the figure then
+		// just echoes the stream's own bitrate. Callers must check that themselves.
 		val delivered = streamBps * (1.0 - drain)
 		return delivered.coerceAtLeast(0.0).toLong()
 	}
@@ -267,7 +279,6 @@ class AdaptiveBitrateController(
 		val bufferUnknown = duration > 0 && buffered >= duration - NEAR_END_MS && duration - position > BUFFER_FULL_MAX_MS
 		val ahead = if (bufferUnknown) 0L else (buffered - position).coerceAtLeast(0L)
 		val nearEnd = !bufferUnknown && duration > 0 && buffered >= duration - NEAR_END_MS
-		val estimate = c.bandwidthEstimate
 		val playing = c.isPlaying
 		// A stream that has not begun playing yet is STARTING UP, not stalling: the player is not
 		// playing and holds no buffer, which looks identical to a stall. Counting that as one made
@@ -288,10 +299,15 @@ class AdaptiveBitrateController(
 		if (!hasPlayed || sinceStart < WARMUP_MS) return
 
 		val tier = ladderIndex(cap)
+		val streamBps = currentStreamBps(c, cap)
+		val drain = drainPerSecond()
+		val measuredLink = measuredLinkBps(streamBps)
 		if (stallTicks >= STALL_TICKS && tier > 0 && sinceSwitch > STALL_COOLDOWN_MS) {
+			// A stalled player has told us all we need: nothing is arriving. Drop a rung rather than
+			// compute a target from a measurement taken while stopped.
 			switchTo(
-				stepDownTarget(tier, estimate),
-				"the player stalled (buffer %.1f s, link %s)".format(ahead / 1000.0, mbit(estimate)),
+				LADDER_BPS[tier - 1],
+				"the player stalled with %.1f s buffered".format(ahead / 1000.0),
 				down = true,
 			)
 			return
@@ -300,51 +316,70 @@ class AdaptiveBitrateController(
 		// falling slowly is not, so the trigger is when it is PROJECTED to run out rather than a
 		// fixed level, with an absolute floor underneath. The link is measured from the buffer
 		// itself, which is a direct observation, and the target is chosen to fit it in one step.
-		val streamBps = currentStreamBps(c, cap)
-		val drain = drainPerSecond()
-		val measuredLink = measuredLinkBps(streamBps)
 		val emptyingMs = if (drain != null && drain > DRAIN_NOISE) (ahead / drain).toLong() else Long.MAX_VALUE
-		val runningOut = ahead < BUFFER_FLOOR_MS || emptyingMs < ACT_BEFORE_EMPTY_MS
-		if (playing && runningOut && drain != null && tier > 0 && sinceSwitch > DOWN_COOLDOWN_MS) {
-			switchTo(
-				stepDownTarget(tier, measuredLink ?: estimate),
-				if (emptyingMs == Long.MAX_VALUE) {
-					"the buffer is down to %.0f s (link measures %s)".format(ahead / 1000.0, mbit(measuredLink ?: estimate))
-				} else {
-					"%.0f s of buffer left and emptying in about %.0f s (link measures %s)"
-						.format(ahead / 1000.0, emptyingMs / 1000.0, mbit(measuredLink ?: estimate))
-				},
-				down = true,
-			)
+		// Only act on a buffer that is genuinely going down. Build 26 also fired when the buffer was
+		// low but briefly refilling, and then computed the target from a measurement that is not valid
+		// in that state, which read 19.6 Mbit/s on a 3 Mbit link and produced a cascade of small steps.
+		val reallyDraining = drain != null && drain > DRAIN_NOISE
+		val runningOut = reallyDraining && (ahead < BUFFER_FLOOR_MS || emptyingMs < ACT_BEFORE_EMPTY_MS)
+		val nearlyGone = ahead < BUFFER_CRITICAL_MS && !nearEnd
+		if (playing && (runningOut || nearlyGone) && tier > 0 && sinceSwitch > DOWN_COOLDOWN_MS) {
+			// Trust the measurement only while draining; otherwise fall back to a single rung.
+			val target = if (reallyDraining && measuredLink != null) {
+				stepDownTarget(tier, measuredLink)
+			} else {
+				LADDER_BPS[tier - 1]
+			}
+			val why = when {
+				reallyDraining && emptyingMs != Long.MAX_VALUE ->
+					"%.0f s of buffer left, emptying in about %.0f s, link measures %s"
+						.format(ahead / 1000.0, emptyingMs / 1000.0, mbit(measuredLink ?: 0L))
+				reallyDraining ->
+					"the buffer is draining and down to %.0f s, link measures %s".format(ahead / 1000.0, mbit(measuredLink ?: 0L))
+				else ->
+					"the buffer is nearly gone (%.0f s) with no usable measurement".format(ahead / 1000.0)
+			}
+			switchTo(target, why, down = true)
 			return
 		}
+		// Climbing. Only while the server is actually transcoding: a direct-playing stream is already
+		// the original file and no higher cap can improve it. There are two cases, and the throughput
+		// meter is used in neither, because it reported 246.8 Mbit/s on a 3 Mbit link (2026-09-14).
+		//
+		//   buffer still FILLING -> the player is fetching flat out, so the measurement is real and we
+		//                           can go straight to the rung it supports.
+		//   buffer FULL          -> the player has stopped fetching, so nothing can be measured. All we
+		//                           know is that the link beats the current stream, so take ONE rung.
 		val next = LADDER_BPS.getOrNull(tier + 1)
-		// Only climb while the server is actually transcoding. When the stream is direct playing the
-		// viewer already has the original file and a higher cap cannot improve it, so the swap would
-		// be pure cost. Stepping DOWN from direct play still matters: it forces a transcode that fits.
-		val roomToClimb = playing && c.isTranscoding && next != null &&
-			(ahead > UP_AHEAD_MS || nearEnd) && estimate > next * UP_HEADROOM
-		if (roomToClimb) upTicks++ else upTicks = 0
+		val bufferFull = ahead >= BUFFER_FULL_MS
+		val filling = drain != null && drain < -DRAIN_NOISE
+		val healthy = playing && c.isTranscoding && next != null && (ahead > UP_AHEAD_MS || nearEnd)
+		if (healthy && (filling || bufferFull)) upTicks++ else upTicks = 0
 		val upCooldown = if (lastSwitchWasDown) UP_AFTER_DOWN_MS else UP_COOLDOWN_MS
 		if (next != null && upTicks >= UP_HOLD_TICKS && sinceSwitch > upCooldown) {
-			// Jump to the highest rung the measured link carries with the same margin, so a fast
-			// connection reaches full quality in one step instead of one rung every few minutes.
-			val target = maxOf(next, ladderFloor((estimate / UP_HEADROOM).toLong()))
-			// Climbing costs a stream swap, so only take a step big enough to be worth one.
-			if (target >= cap * UP_MIN_GAIN) {
-				switchTo(
-					target,
-					"the link has held %s for %d s (buffer %.1f s)".format(mbit(estimate), UP_HOLD_TICKS, ahead / 1000.0),
-					down = false,
-				)
+			val target = if (filling && measuredLink != null) {
+				maxOf(next, ladderFloor((measuredLink / UP_HEADROOM).toLong()))
+			} else {
+				next
+			}
+			val why = if (filling && measuredLink != null) {
+				"the buffer has been filling for %d s and the link measures %s".format(UP_HOLD_TICKS, mbit(measuredLink))
+			} else {
+				"the buffer has sat full for %d s, so the link beats %s".format(UP_HOLD_TICKS, mbit(cap.toLong()))
+			}
+			// Climbing costs a stream swap, so only take a step big enough to be worth one. A
+			// one-rung reservoir climb is exempt: it is how we discover headroom we cannot measure.
+			if (target >= cap * UP_MIN_GAIN || target == next) {
+				switchTo(target, why, down = false)
 			}
 		}
 	}
 
-	private fun stepDownTarget(tier: Int, estimate: Long): Int {
+	/** The rung to drop to: at least one step down, and low enough to fit the link we measured. */
+	private fun stepDownTarget(tier: Int, linkBps: Long): Int {
 		val below = LADDER_BPS[tier - 1]
-		if (estimate <= 0) return below
-		return minOf(below, ladderFloor((estimate * DOWN_SAFETY).toLong()))
+		if (linkBps <= 0) return below
+		return minOf(below, ladderFloor((linkBps * DOWN_SAFETY).toLong()))
 	}
 
 	private fun switchTo(target: Int, reason: String, down: Boolean) {
