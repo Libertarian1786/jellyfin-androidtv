@@ -103,8 +103,15 @@ private const val CROSSOVER_LEAD_MS = 45_000L
  * a 200 Mbit/s stream is 1.1 GB and would take the device down.
  */
 private const val PRELOAD_BUDGET_BYTES = 40_000_000L
-/** Cross over once this much of the replacement is pre-buffered. */
-private const val CROSSOVER_READY_MS = 4_000L
+/**
+ * Hand over only once this much of the replacement has actually arrived. Below it the hand-over
+ * is seen: build 35 crossed over with about 14 s in hand and cost 5.7 s of silence, and crossed
+ * over with 43 s in hand and cost nothing at all.
+ */
+private const val CROSSOVER_READY_MS = 20_000L
+
+/** How many times to re-queue further ahead before giving up and taking the restarting swap. */
+private const val CROSSOVER_MAX_ATTEMPTS = 3
 /** Give up waiting for the replacement after this and fall back to the restarting swap. */
 private const val CROSSOVER_TIMEOUT_MS = 90_000L
 
@@ -214,6 +221,9 @@ class AdaptiveBitrateController(
 	private var bestLinkAt = 0L
 	/** Consecutive ticks the buffer has been genuinely going down. */
 	private var drainTicks = 0
+	/** Re-queue attempts made for the change-over in flight, and the pre-fetch budget it uses. */
+	private var crossAttempts = 0
+	private var crossPreloadMs = 0L
 	/** How long after a (re)start the buffer may be shallow without anyone acting on it. */
 	private var settleMs = WARMUP_MS
 
@@ -398,6 +408,16 @@ class AdaptiveBitrateController(
 			val queuedBuffered = c.queuedBufferedMs
 			val waited = now() - crossingSince
 			when {
+				// Safety valve: while a change-over is in flight nothing else in the tick runs, so a
+				// buffer that collapses underneath it would go unanswered. Give up and take the swap.
+				ahead < BUFFER_CRITICAL_MS && !nearEnd -> {
+					Timber.w("Adaptive bitrate: the buffer collapsed to %.0f s mid change-over, falling back to a restart", ahead / 1000.0)
+					state.capBps = crossingTo
+					crossingTo = 0
+					c.abandonCrossOver()
+					c.switchQualitySmoothly()
+					return
+				}
 				queuedStart < 0 && waited > CROSSOVER_TIMEOUT_MS -> {
 					Timber.w("Adaptive bitrate: the replacement never arrived, falling back to a restart")
 					state.capBps = crossingTo
@@ -411,9 +431,29 @@ class AdaptiveBitrateController(
 				// getTotalBufferedDuration cannot see it, and waiting on that figure made every
 				// cross-over time out (builds 29 and 30) whether or not preloading had worked.
 				queuedStart >= 0 && c.currentPosition >= queuedStart - TICK_MS -> {
+					// Measure readiness in bytes: the player's media-time figure for a preloaded item
+					// under-reports badly (5.4 s for 3627 kB of a 2.0 Mbit/s stream, and 0.0 s once).
+					val arrivedMs = maxOf(queuedBuffered, c.queuedBytes * 8_000 / crossingTo)
+					if (arrivedMs < CROSSOVER_READY_MS && crossAttempts < CROSSOVER_MAX_ATTEMPTS &&
+						ahead >= CROSSOVER_MIN_BUFFER_DOWN_MS
+					) {
+						// Not enough of it is here yet. The stream we are on is still playing and still
+						// healthy, so nothing forces the change now: drop this attempt and queue another
+						// further ahead. Handing over to a starved stream costs its own gap AND the buffer
+						// every later decision depends on.
+						crossAttempts++
+						Timber.i(
+							"Adaptive bitrate: only %.0f s of the %s stream has arrived, trying again further ahead (%d/%d)",
+							arrivedMs / 1000.0, mbit(crossingTo.toLong()), crossAttempts, CROSSOVER_MAX_ATTEMPTS,
+						)
+						c.abandonCrossOver()
+						crossingSince = now()
+						c.beginCrossOver(CROSSOVER_LEAD_MS, crossPreloadMs)
+						return
+					}
 					Timber.i(
-						"Adaptive bitrate: crossing over to %s at %.1f s (replacement pre-fetched %.1f s, %d kB)",
-						mbit(crossingTo.toLong()), queuedStart / 1000.0, queuedBuffered / 1000.0, c.queuedBytes / 1024,
+						"Adaptive bitrate: crossing over to %s at %.1f s (%.0f s of it in hand, %d kB)",
+						mbit(crossingTo.toLong()), queuedStart / 1000.0, arrivedMs / 1000.0, c.queuedBytes / 1024,
 					)
 					state.capBps = crossingTo
 					crossingTo = 0
@@ -593,8 +633,9 @@ class AdaptiveBitrateController(
 			// state.capBps stays at the target: createDeviceProfile reads it when the request is
 			// built, so restoring the old value here would fetch the replacement at the old bitrate.
 			// Pre-fetch for as long as the lead allows, within the byte budget for this bitrate.
-			val preloadMs = minOf(CROSSOVER_LEAD_MS, PRELOAD_BUDGET_BYTES * 8_000 / target.toLong())
-			c.beginCrossOver(CROSSOVER_LEAD_MS, preloadMs)
+			crossPreloadMs = minOf(CROSSOVER_LEAD_MS, PRELOAD_BUDGET_BYTES * 8_000 / target.toLong())
+			crossAttempts = 0
+			c.beginCrossOver(CROSSOVER_LEAD_MS, crossPreloadMs)
 			return
 		}
 		// Swaps to a stream at the new cap while the current one plays on out of its buffer, so the

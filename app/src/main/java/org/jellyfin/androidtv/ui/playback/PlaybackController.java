@@ -953,6 +953,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     /** Throws away a queued stream we no longer want. */
     public void abandonCrossOver() {
         if (mQueuedStreamInfo == null) return;
+        // It has a transcode running on the server; nothing else would ever stop it.
+        if (hasFragment()) playbackManager.getValue().stopTranscode(mFragment, mQueuedStreamInfo);
         mQueuedStreamInfo = null;
         mQueuedOptions = null;
         mQueuedStartMs = -1;
