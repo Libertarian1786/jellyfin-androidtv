@@ -52,9 +52,14 @@ private const val WARMUP_MS = 15_000L
 private const val STALL_TICKS = 3
 private const val STALL_AHEAD_MS = 1_500L
 private const val STALL_COOLDOWN_MS = 30_000L
-private const val DRAIN_AHEAD_MS = 15_000L
-private const val DRAIN_DROP_MS = 3_000L
-private const val DRAIN_LINK_HEADROOM = 1.25
+/** Step down once the buffer is projected to run out within this, so the swap has room. */
+private const val ACT_BEFORE_EMPTY_MS = 45_000L
+
+/** Step down regardless below this, however gentle the drain looks. */
+private const val BUFFER_FLOOR_MS = 20_000L
+
+/** Ignore drains smaller than this fraction of real time as measurement noise. */
+private const val DRAIN_NOISE = 0.05
 private const val DOWN_COOLDOWN_MS = 20_000L
 private const val DOWN_SAFETY = 0.7
 private const val UP_AHEAD_MS = 40_000L
@@ -149,6 +154,40 @@ class AdaptiveBitrateController(
 		bps?.let { parts += mbitShort(it) }
 		if (!transcoding) parts += "Direct"
 		return parts.joinToString(" · ")
+	}
+
+	/**
+	 * What the server is currently sending, in bits per second: the cap we asked it to transcode to,
+	 * or the file's own bitrate when it is playing directly.
+	 */
+	private fun currentStreamBps(c: PlaybackController, cap: Int): Long =
+		if (c.isTranscoding) cap.toLong() else (c.currentMediaSource?.bitrate?.toLong() ?: cap.toLong())
+
+	/**
+	 * Seconds of buffer lost per second of playback, averaged over the history window. Positive means
+	 * emptying, negative means filling.
+	 */
+	private fun drainPerSecond(): Double? {
+		if (aheadHistory.size < HISTORY) return null
+		val windowSec = (aheadHistory.size - 1) * TICK_MS / 1000.0
+		if (windowSec <= 0.0) return null
+		return -(aheadHistory.last() - aheadHistory.first()) / 1000.0 / windowSec
+	}
+
+	/**
+	 * Measures the link from the buffer rather than from ExoPlayer's throughput meter. Over a window
+	 * of W seconds of playback the player consumed W seconds of media and received W + (change in
+	 * buffer) seconds of it, so the link delivered stream_bitrate * (W + delta) / W.
+	 *
+	 * This is a direct measurement of what actually arrived. The throughput meter is a prediction and
+	 * it is unreliable here: it read 1.8 and 159 Mbit/s on the same network minutes apart. It is only
+	 * meaningful while the buffer is short of its cap, because a full buffer makes the player stop
+	 * fetching and the figure then reads low - which is exactly the case we never use it for.
+	 */
+	private fun measuredLinkBps(streamBps: Long): Long? {
+		val drain = drainPerSecond() ?: return null
+		val delivered = streamBps * (1.0 - drain)
+		return delivered.coerceAtLeast(0.0).toLong()
 	}
 
 	/** Measures the link to a remote server so the first stream starts at a sensible cap. */
@@ -257,12 +296,24 @@ class AdaptiveBitrateController(
 			)
 			return
 		}
-		val draining = aheadHistory.size >= HISTORY && ahead < DRAIN_AHEAD_MS && aheadHistory.first() - ahead >= DRAIN_DROP_MS
-		val linkNotAhead = estimate <= 0 || estimate < cap * DRAIN_LINK_HEADROOM
-		if (playing && draining && linkNotAhead && tier > 0 && sinceSwitch > DOWN_COOLDOWN_MS) {
+		// Buffer-driven step down. A buffer of 40 s falling fast is an emergency; the same 40 s
+		// falling slowly is not, so the trigger is when it is PROJECTED to run out rather than a
+		// fixed level, with an absolute floor underneath. The link is measured from the buffer
+		// itself, which is a direct observation, and the target is chosen to fit it in one step.
+		val streamBps = currentStreamBps(c, cap)
+		val drain = drainPerSecond()
+		val measuredLink = measuredLinkBps(streamBps)
+		val emptyingMs = if (drain != null && drain > DRAIN_NOISE) (ahead / drain).toLong() else Long.MAX_VALUE
+		val runningOut = ahead < BUFFER_FLOOR_MS || emptyingMs < ACT_BEFORE_EMPTY_MS
+		if (playing && runningOut && drain != null && tier > 0 && sinceSwitch > DOWN_COOLDOWN_MS) {
 			switchTo(
-				stepDownTarget(tier, estimate),
-				"the buffer is draining (%.1f s left, link %s)".format(ahead / 1000.0, mbit(estimate)),
+				stepDownTarget(tier, measuredLink ?: estimate),
+				if (emptyingMs == Long.MAX_VALUE) {
+					"the buffer is down to %.0f s (link measures %s)".format(ahead / 1000.0, mbit(measuredLink ?: estimate))
+				} else {
+					"%.0f s of buffer left and emptying in about %.0f s (link measures %s)"
+						.format(ahead / 1000.0, emptyingMs / 1000.0, mbit(measuredLink ?: estimate))
+				},
 				down = true,
 			)
 			return
