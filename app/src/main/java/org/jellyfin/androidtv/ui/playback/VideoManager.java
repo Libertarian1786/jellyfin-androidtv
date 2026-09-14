@@ -29,6 +29,7 @@ import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.common.util.Util;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
@@ -74,6 +75,7 @@ public class VideoManager {
     public ExoPlayer mExoPlayer;
     private DefaultBandwidthMeter mBandwidthMeter;
     private PreloadingLoadControl mLoadControl;
+    private static final long PRELOAD_TARGET_MS = 20_000;
     private PlayerView mExoPlayerView;
     private Handler mHandler = new Handler();
 
@@ -354,6 +356,10 @@ public class VideoManager {
                 .build();
         mExoPlayer.addMediaItem(item);
         if (mLoadControl != null) mLoadControl.setPreloadAllowed(true);
+        // Playlist preloading is OFF unless you ask for it: PreloadConfiguration.DEFAULT carries
+        // TIME_UNSET, so the queue never designates anything to preload and shouldContinuePreloading
+        // is never even consulted. This is the opt-in that makes the whole thing run.
+        mExoPlayer.setPreloadConfiguration(new ExoPlayer.PreloadConfiguration(Util.msToUs(PRELOAD_TARGET_MS)));
         Timber.i("Adaptive bitrate: queued a replacement stream starting at %d ms", startPositionMs);
         return true;
     }
@@ -370,6 +376,7 @@ public class VideoManager {
         mExoPlayer.seekToNextMediaItem();
         if (mExoPlayer.getCurrentMediaItemIndex() > 0) mExoPlayer.removeMediaItem(0);
         if (mLoadControl != null) mLoadControl.setPreloadAllowed(false);
+        mExoPlayer.setPreloadConfiguration(ExoPlayer.PreloadConfiguration.DEFAULT);
         Timber.i("Adaptive bitrate: crossed over to the queued stream");
         return true;
     }
@@ -377,6 +384,7 @@ public class VideoManager {
     /** Throws away a queued replacement that is no longer wanted. */
     public void discardReplacement() {
         if (mLoadControl != null) mLoadControl.setPreloadAllowed(false);
+        if (isInitialized()) mExoPlayer.setPreloadConfiguration(ExoPlayer.PreloadConfiguration.DEFAULT);
         if (isInitialized() && mExoPlayer.getMediaItemCount() > 1) {
             mExoPlayer.removeMediaItem(mExoPlayer.getMediaItemCount() - 1);
             Timber.i("Adaptive bitrate: discarded the queued replacement");
