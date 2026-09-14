@@ -887,6 +887,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
      * carries on. Nothing changes on screen yet. Returns immediately; readiness is polled.
      */
     public void beginCrossOver(long leadMs) {
+        beginCrossOver(leadMs, leadMs);
+    }
+
+    public void beginCrossOver(long leadMs, final long preloadMs) {
         final BaseItemDto item = getCurrentlyPlayingItem();
         if (!hasInitializedVideoManager() || !hasFragment() || item == null || mCurrentStreamInfo == null || isLiveTv) return;
         if (mQueuedStreamInfo != null) return;
@@ -898,7 +902,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             @Override
             public void onResponse(StreamInfo response) {
                 if (!isActive() || mVideoManager == null) { mQueuedStartMs = -1; return; }
-                if (mVideoManager.queueReplacement(api.getValue(), response, startAt)) {
+                if (mVideoManager.queueReplacement(api.getValue(), response, startAt, preloadMs)) {
                     mQueuedStreamInfo = response;
                     mQueuedOptions = options;
                 } else {

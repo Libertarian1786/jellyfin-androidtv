@@ -65,8 +65,11 @@ private const val BUFFER_FLOOR_MS = 20_000L
 /** Step down at this depth even if the buffer looks momentarily steady: it is nearly gone. */
 private const val BUFFER_CRITICAL_MS = 8_000L
 
-/** Treat the buffer as full, and therefore uninformative, at this depth. */
-private const val BUFFER_FULL_MS = 120_000L
+/**
+ * Treat the buffer as full, and therefore uninformative, at this depth - it is where the player
+ * stops fetching (VideoManager's minBufferMs), so nothing above it measures the link.
+ */
+private const val BUFFER_FULL_MS = 150_000L
 
 /** Ignore drains smaller than this fraction of real time as measurement noise. */
 private const val DRAIN_NOISE = 0.05
@@ -85,12 +88,25 @@ private const val UP_AFTER_DOWN_MS = 180_000L
 /** How long a rung stays off-limits after the link forced us off it. */
 private const val FAILED_RETRY_MS = 300_000L
 
-/** How far ahead of the current position a pre-buffered replacement is told to begin. */
-private const val CROSSOVER_LEAD_MS = 20_000L
+/**
+ * How far ahead of the current position a pre-buffered replacement is told to begin - and so how
+ * long it has to arrive in. Jellyfin takes 10-15 s just to start the new encode (timed from its
+ * own transcode logs on 2026-09-14), and whatever is left of this after that is all the time the
+ * replacement gets: at 20 s the two measured cross-overs got 9 s and 3 s of fetching, and were
+ * seamless and 5.7 s of silence respectively.
+ */
+private const val CROSSOVER_LEAD_MS = 45_000L
+
+/**
+ * Bytes the pre-fetch may spend. Preloading happens outside the player's allocator cap, so the
+ * budget is in bytes rather than seconds: 45 s of a 2 Mbit/s stream is 11 MB and welcome, 45 s of
+ * a 200 Mbit/s stream is 1.1 GB and would take the device down.
+ */
+private const val PRELOAD_BUDGET_BYTES = 40_000_000L
 /** Cross over once this much of the replacement is pre-buffered. */
 private const val CROSSOVER_READY_MS = 4_000L
 /** Give up waiting for the replacement after this and fall back to the restarting swap. */
-private const val CROSSOVER_TIMEOUT_MS = 40_000L
+private const val CROSSOVER_TIMEOUT_MS = 90_000L
 
 /**
  * Only pre-buffer a replacement when the buffer is at least this deep. Pre-buffering pays for the
@@ -103,7 +119,15 @@ private const val CROSSOVER_MIN_BUFFER_MS = 60_000L
  * whatever we do, so the buffer has to still cover that point when it gets there; below this there
  * is nothing to play out of and a restart is the honest answer.
  */
-private const val CROSSOVER_MIN_BUFFER_DOWN_MS = 35_000L
+private const val CROSSOVER_MIN_BUFFER_DOWN_MS = 60_000L
+
+/**
+ * Upper edge for the early step down. DefaultLoadControl stops fetching at maxBufferMs and does
+ * not resume until minBufferMs, and in between the link is deliberately idle while the buffer
+ * drains at a full second per second. A drain measured up there is not evidence about the link at
+ * all, so the early trigger stays clear of it. (VideoManager: 150 s / 180 s.)
+ */
+private const val CROSSOVER_MAX_BUFFER_DOWN_MS = 130_000L
 
 /** How long a link measurement is worth remembering when judging a climb we cannot measure. */
 private const val LINK_MEMORY_MS = 300_000L
@@ -114,7 +138,7 @@ private const val LINK_MEMORY_MS = 300_000L
  * down to about 11 s - too late to cross over, so every downward change took the restart. A smooth
  * change is nearly free, so it is taken while there is still buffer to make it with.
  */
-private const val CROSSOVER_ACT_BEFORE_EMPTY_MS = 180_000L
+private const val CROSSOVER_ACT_BEFORE_EMPTY_MS = 300_000L
 
 /** Seconds of continuous draining before the early step down fires, so a brief dip cannot. */
 private const val DRAIN_HOLD_TICKS = 15
@@ -445,7 +469,8 @@ class AdaptiveBitrateController(
 		// Deep enough to hand over without the picture noticing, and the change would be smooth.
 		// Acting here rather than at the last responsible moment is the whole point: the late
 		// triggers below fire with 20 s or 8 s in hand, which is not enough to cross over with.
-		val deepEnough = reallyDraining && ahead >= CROSSOVER_MIN_BUFFER_DOWN_MS
+		val deepEnough = reallyDraining && ahead >= CROSSOVER_MIN_BUFFER_DOWN_MS &&
+			ahead <= CROSSOVER_MAX_BUFFER_DOWN_MS
 		val smoothDown = deepEnough && drainTicks >= DRAIN_HOLD_TICKS &&
 			emptyingMs < CROSSOVER_ACT_BEFORE_EMPTY_MS &&
 			userPreferences[UserPreferences.adaptivePreloadSwitch]
@@ -567,7 +592,9 @@ class AdaptiveBitrateController(
 			crossingSince = now()
 			// state.capBps stays at the target: createDeviceProfile reads it when the request is
 			// built, so restoring the old value here would fetch the replacement at the old bitrate.
-			c.beginCrossOver(CROSSOVER_LEAD_MS)
+			// Pre-fetch for as long as the lead allows, within the byte budget for this bitrate.
+			val preloadMs = minOf(CROSSOVER_LEAD_MS, PRELOAD_BUDGET_BYTES * 8_000 / target.toLong())
+			c.beginCrossOver(CROSSOVER_LEAD_MS, preloadMs)
 			return
 		}
 		// Swaps to a stream at the new cap while the current one plays on out of its buffer, so the

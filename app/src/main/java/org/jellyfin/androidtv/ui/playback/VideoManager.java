@@ -77,6 +77,7 @@ public class VideoManager {
     public ExoPlayer mExoPlayer;
     private DefaultBandwidthMeter mBandwidthMeter;
     private PreloadingLoadControl mLoadControl;
+    /** Fallback only: every cross-over passes its own budget, sized from the target bitrate. */
     private static final long PRELOAD_TARGET_MS = 20_000;
     private PlayerView mExoPlayerView;
     private Handler mHandler = new Handler();
@@ -284,7 +285,7 @@ public class VideoManager {
         // protects the 2 GB Chromecasts from over-buffering at 4K bitrates. Constraints the
         // library enforces: playback <= min, afterRebuffer <= min, min <= max.
         mLoadControl = new PreloadingLoadControl(
-                /* minBufferMs */ 60_000,
+                /* minBufferMs */ 150_000,
                 /* maxBufferMs */ 180_000,
                 /* bufferForPlaybackMs */ 2_500,
                 /* bufferForPlaybackAfterRebufferMs */ 15_000,
@@ -385,6 +386,15 @@ public class VideoManager {
      * the current one keeps playing. Returns false if there is already one queued.
      */
     public boolean queueReplacement(ApiClient api, StreamInfo streamInfo, long startPositionMs) {
+        return queueReplacement(api, streamInfo, startPositionMs, PRELOAD_TARGET_MS);
+    }
+
+    /**
+     * @param preloadMs how much of the replacement to fetch ahead. Sized by the caller from the
+     *   target bitrate: preloading happens outside the allocator's byte cap, so a duration that is
+     *   sensible at 2 Mbit/s would be a gigabyte at 200.
+     */
+    public boolean queueReplacement(ApiClient api, StreamInfo streamInfo, long startPositionMs, long preloadMs) {
         if (!isInitialized() || mExoPlayer.getMediaItemCount() > 1) return false;
         String path = streamInfo.getMediaUrl();
         if (path == null) return false;
@@ -403,8 +413,9 @@ public class VideoManager {
         // Playlist preloading is OFF unless you ask for it: PreloadConfiguration.DEFAULT carries
         // TIME_UNSET, so the queue never designates anything to preload and shouldContinuePreloading
         // is never even consulted. This is the opt-in that makes the whole thing run.
-        mExoPlayer.setPreloadConfiguration(new ExoPlayer.PreloadConfiguration(Util.msToUs(PRELOAD_TARGET_MS)));
-        Timber.i("Adaptive bitrate: queued a replacement stream starting at %d ms", startPositionMs);
+        mExoPlayer.setPreloadConfiguration(new ExoPlayer.PreloadConfiguration(Util.msToUs(preloadMs)));
+        Timber.i("Adaptive bitrate: queued a replacement stream starting at %d ms, pre-fetching up to %d ms",
+                startPositionMs, preloadMs);
         return true;
     }
 
