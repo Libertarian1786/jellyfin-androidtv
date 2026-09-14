@@ -73,11 +73,17 @@ private const val DRAIN_NOISE = 0.05
 private const val DOWN_COOLDOWN_MS = 20_000L
 private const val DOWN_SAFETY = 0.7
 private const val UP_AHEAD_MS = 40_000L
-private const val UP_HEADROOM = 1.6
+/** Climb only to a rung the link beats by this much, so there is spare capacity to refill the
+ *  buffer the swap just emptied. 1.6 was so demanding it sat at under half the link; 1.25
+ *  settles at a rung with a quarter of the link spare. */
+private const val UP_HEADROOM = 1.25
 private const val UP_MIN_GAIN = 1.5
 private const val UP_HOLD_TICKS = 60
 private const val UP_COOLDOWN_MS = 120_000L
 private const val UP_AFTER_DOWN_MS = 180_000L
+
+/** How long a rung stays off-limits after the link forced us off it. */
+private const val FAILED_RETRY_MS = 300_000L
 private const val NEAR_END_MS = 2_000L
 private const val BUFFER_FULL_MAX_MS = 200_000L
 
@@ -129,6 +135,9 @@ class AdaptiveBitrateController(
 	private var lastSwitchAt = 0L
 	private var lastSwitchWasDown = false
 	private var hasPlayed = false
+	/** The cap we were forced to abandon, and when: do not climb back to it for a while. */
+	private var failedCapBps = 0
+	private var failedAt = 0L
 	private var stallTicks = 0
 	private var upTicks = 0
 	private val aheadHistory = ArrayDeque<Long>()
@@ -357,11 +366,11 @@ class AdaptiveBitrateController(
 		if (healthy && (filling || bufferFull)) upTicks++ else upTicks = 0
 		val upCooldown = if (lastSwitchWasDown) UP_AFTER_DOWN_MS else UP_COOLDOWN_MS
 		if (next != null && upTicks >= UP_HOLD_TICKS && sinceSwitch > upCooldown) {
-			val target = if (filling && measuredLink != null) {
-				maxOf(next, ladderFloor((measuredLink / UP_HEADROOM).toLong()))
-			} else {
-				next
-			}
+			// Climb only to what the link actually supports with headroom. maxOf(next, ...) used to
+			// force a step up even when the sum said not to, which on 2026-09-14 took a 2.7 Mbit link
+			// to a 3.0 Mbit stream and left nothing to refill the buffer: it dropped back 28 s later.
+			val supported = if (filling && measuredLink != null) ladderFloor((measuredLink / UP_HEADROOM).toLong()) else null
+			val target = supported ?: next
 			val why = if (filling && measuredLink != null) {
 				"the buffer has been filling for %d s and the link measures %s".format(UP_HOLD_TICKS, mbit(measuredLink))
 			} else {
@@ -369,7 +378,10 @@ class AdaptiveBitrateController(
 			}
 			// Climbing costs a stream swap, so only take a step big enough to be worth one. A
 			// one-rung reservoir climb is exempt: it is how we discover headroom we cannot measure.
-			if (target >= cap * UP_MIN_GAIN || target == next) {
+			// A rung we were just forced off is not worth retrying immediately; the reservoir climb in
+			// particular is a guess, and without this it can oscillate on and off a marginal rung.
+			val retryBlocked = failedCapBps > 0 && target >= failedCapBps && now() - failedAt < FAILED_RETRY_MS
+			if (target > cap && !retryBlocked && (target >= cap * UP_MIN_GAIN || target == next)) {
 				switchTo(target, why, down = false)
 			}
 		}
@@ -387,6 +399,10 @@ class AdaptiveBitrateController(
 		val cap = state.capBps ?: return
 		if (target == cap) return
 		Timber.i("Adaptive bitrate: %s -> %s because %s", mbit(cap.toLong()), mbit(target.toLong()), reason)
+		if (down) {
+			failedCapBps = cap
+			failedAt = now()
+		}
 		state.capBps = target
 		lastSwitchAt = now()
 		lastSwitchWasDown = down
