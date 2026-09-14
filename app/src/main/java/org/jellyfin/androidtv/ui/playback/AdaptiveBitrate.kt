@@ -142,6 +142,9 @@ private const val LINK_MEMORY_MS = 300_000L
 /** Seconds of continuous draining before the early step down fires, so a brief dip cannot. */
 private const val DRAIN_HOLD_TICKS = 15
 
+/** How often to log the buffer depth and link, in ticks. */
+private const val READOUT_EVERY_TICKS = 15
+
 /**
  * After a cross-over the new stream holds only what was pre-buffered, so a shallow buffer is
  * expected rather than alarming. Nothing but a real stall may act during this.
@@ -213,6 +216,7 @@ class AdaptiveBitrateController(
 	private var bestLinkAt = 0L
 	/** Consecutive ticks the buffer has been genuinely going down. */
 	private var drainTicks = 0
+	private var readoutTicks = 0
 	/** Re-queue attempts made for the change-over in flight, and the pre-fetch budget it uses. */
 	private var crossAttempts = 0
 	private var crossPreloadMs = 0L
@@ -391,6 +395,16 @@ class AdaptiveBitrateController(
 		aheadHistory.addLast(ahead)
 		if (aheadHistory.size > HISTORY) aheadHistory.removeFirst()
 		lastAhead = ahead
+		// A periodic readout of the two numbers every decision here turns on. Without it a test run
+		// only shows the decisions, not the state they were taken from, and the difference between
+		// "the rule did not fire" and "the buffer was never deep enough to reach the rule" is
+		// invisible - which cost a whole test cycle on 2026-09-14.
+		if (++readoutTicks % READOUT_EVERY_TICKS == 0) {
+			Timber.i(
+				"Adaptive bitrate: buffer %.0f s, cap %s, link %s, draining for %d s",
+				ahead / 1000.0, mbit(cap.toLong()), mbit(measuredLinkBps(currentStreamBps(c, cap)) ?: -1L), drainTicks,
+			)
+		}
 
 		// Stalled: it was playing, has now stopped, and has nothing buffered to play.
 		stallTicks = if (hasPlayed && !playing && ahead < STALL_AHEAD_MS && !nearEnd) stallTicks + 1 else 0
