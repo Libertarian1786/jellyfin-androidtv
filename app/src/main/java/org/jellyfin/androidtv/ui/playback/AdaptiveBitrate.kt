@@ -99,6 +99,16 @@ private const val CROSSOVER_TIMEOUT_MS = 40_000L
 private const val CROSSOVER_MIN_BUFFER_MS = 60_000L
 
 /**
+ * The same rule for a step DOWN. The playhead reaches the hand-over point CROSSOVER_LEAD_MS later
+ * whatever we do, so the buffer has to still cover that point when it gets there; below this there
+ * is nothing to play out of and a restart is the honest answer.
+ */
+private const val CROSSOVER_MIN_BUFFER_DOWN_MS = 35_000L
+
+/** How long a link measurement is worth remembering when judging a climb we cannot measure. */
+private const val LINK_MEMORY_MS = 300_000L
+
+/**
  * After a cross-over the new stream holds only what was pre-buffered, so a shallow buffer is
  * expected rather than alarming. Nothing but a real stall may act during this.
  */
@@ -164,6 +174,9 @@ class AdaptiveBitrateController(
 	private var upTicks = 0
 	private val aheadHistory = ArrayDeque<Long>()
 	private var lastAhead = 0L
+	/** The best link we have actually measured lately - the ceiling for a climb taken blind. */
+	private var bestLinkBps = 0L
+	private var bestLinkAt = 0L
 	/** How long after a (re)start the buffer may be shallow without anyone acting on it. */
 	private var settleMs = WARMUP_MS
 
@@ -362,8 +375,8 @@ class AdaptiveBitrateController(
 				// cross-over time out (builds 29 and 30) whether or not preloading had worked.
 				queuedStart >= 0 && c.currentPosition >= queuedStart - TICK_MS -> {
 					Timber.i(
-						"Adaptive bitrate: crossing over to %s at %.1f s (replacement reports %.1f s buffered)",
-						mbit(crossingTo.toLong()), queuedStart / 1000.0, queuedBuffered / 1000.0,
+						"Adaptive bitrate: crossing over to %s at %.1f s (replacement pre-fetched %.1f s, %d kB)",
+						mbit(crossingTo.toLong()), queuedStart / 1000.0, queuedBuffered / 1000.0, c.queuedBytes / 1024,
 					)
 					state.capBps = crossingTo
 					crossingTo = 0
@@ -398,10 +411,12 @@ class AdaptiveBitrateController(
 			return
 		}
 		// A stream that has just started - or has just been crossed over to - holds only a shallow
-		// buffer, and that is normal rather than a warning. A genuine stall is handled above, so
-		// nothing is lost by waiting. Build 31 had no such window after a cross-over and stepped
-		// straight back down 16 s later on a buffer that was simply still filling.
-		if (sinceStart < settleMs) return
+		// buffer, and that is normal rather than a warning. Build 31 had no such window and stepped
+		// straight back down 16 s after a cross-over on a buffer that was simply still filling. But
+		// build 32 made it a blanket silence, and when a climb HAD overshot the link the buffer ran
+		// from full to 4 s inside that window, so a buffer that is genuinely emptying still gets
+		// through. A stream that fits is filling, and never trips this.
+		val settling = sinceStart < settleMs
 		// Buffer-driven step down. A buffer of 40 s falling fast is an emergency; the same 40 s
 		// falling slowly is not, so the trigger is when it is PROJECTED to run out rather than a
 		// fixed level, with an absolute floor underneath. The link is measured from the buffer
@@ -413,7 +428,8 @@ class AdaptiveBitrateController(
 		val reallyDraining = drain != null && drain > DRAIN_NOISE
 		val runningOut = reallyDraining && (ahead < BUFFER_FLOOR_MS || emptyingMs < ACT_BEFORE_EMPTY_MS)
 		val nearlyGone = ahead < BUFFER_CRITICAL_MS && !nearEnd
-		if (playing && (runningOut || nearlyGone) && tier > 0 && sinceSwitch > DOWN_COOLDOWN_MS) {
+		val settledEnough = !settling || (reallyDraining && ahead < BUFFER_CRITICAL_MS)
+		if (playing && settledEnough && (runningOut || nearlyGone) && tier > 0 && sinceSwitch > DOWN_COOLDOWN_MS) {
 			// Trust the measurement only while draining; otherwise fall back to a single rung.
 			val target = if (reallyDraining && measuredLink != null) {
 				stepDownTarget(tier, measuredLink)
@@ -429,9 +445,14 @@ class AdaptiveBitrateController(
 				else ->
 					"the buffer is nearly gone (%.0f s) with no usable measurement".format(ahead / 1000.0)
 			}
-			switchTo(target, why, down = true)
+			// Only a deep buffer can survive a cross-over on the way down, and only the projection
+			// branch fires while the buffer is still deep. The floor, critical and stall branches fire
+			// at or under the lead, where the playhead would reach the hand-over point with nothing
+			// left to show; those keep the restart.
+			switchTo(target, why, down = true, mayCrossOver = reallyDraining && ahead >= CROSSOVER_MIN_BUFFER_DOWN_MS)
 			return
 		}
+		if (settling) return
 		// Climbing. Only while the server is actually transcoding: a direct-playing stream is already
 		// the original file and no higher cap can improve it. There are two cases, and the throughput
 		// meter is used in neither, because it reported 246.8 Mbit/s on a 3 Mbit link (2026-09-14).
@@ -443,6 +464,14 @@ class AdaptiveBitrateController(
 		val next = LADDER_BPS.getOrNull(tier + 1)
 		val bufferFull = ahead >= BUFFER_FULL_MS
 		val filling = drain != null && drain < -DRAIN_NOISE
+		// A measurement only means anything while the player is fetching flat out. Remember the best
+		// one: it is the only evidence available to a climb taken from a full buffer. Let it expire,
+		// or a link that has since got worse would be judged for ever against how good it once was.
+		if (bestLinkBps > 0 && now() - bestLinkAt >= LINK_MEMORY_MS) bestLinkBps = 0
+		if (measuredLink != null && (filling || reallyDraining) && measuredLink > bestLinkBps) {
+			bestLinkBps = measuredLink
+			bestLinkAt = now()
+		}
 		val healthy = playing && c.isTranscoding && next != null && (ahead > UP_AHEAD_MS || nearEnd)
 		if (healthy && (filling || bufferFull)) upTicks++ else upTicks = 0
 		val upCooldown = if (lastSwitchWasDown) UP_AFTER_DOWN_MS else UP_COOLDOWN_MS
@@ -462,7 +491,14 @@ class AdaptiveBitrateController(
 			// A rung we were just forced off is not worth retrying immediately; the reservoir climb in
 			// particular is a guess, and without this it can oscillate on and off a marginal rung.
 			val retryBlocked = failedCapBps > 0 && target >= failedCapBps && now() - failedAt < FAILED_RETRY_MS
-			if (target > cap && !retryBlocked && (target >= cap * UP_MIN_GAIN || target == next)) {
+			// A full buffer proves the link beats the stream we are already asking for, and nothing
+			// more. On 2026-09-14 that blind one-rung climb took a 3.15 Mbit link to the 3.0 Mbit rung -
+			// 3.0 of video plus 0.256 of audio, more than the link carries - and the bad guess cost 29 s
+			// of silence before it fell back. So it may not aim above what our best real measurement
+			// supports with the same headroom every other climb has to clear.
+			val recentBest = bestLinkBps
+			val blindTooHigh = supported == null && recentBest > 0 && target * UP_HEADROOM > recentBest
+			if (target > cap && !retryBlocked && !blindTooHigh && (target >= cap * UP_MIN_GAIN || target == next)) {
 				switchTo(target, why, down = false)
 			}
 		}
@@ -475,7 +511,7 @@ class AdaptiveBitrateController(
 		return minOf(below, ladderFloor((linkBps * DOWN_SAFETY).toLong()))
 	}
 
-	private fun switchTo(target: Int, reason: String, down: Boolean) {
+	private fun switchTo(target: Int, reason: String, down: Boolean, mayCrossOver: Boolean = !down) {
 		val c = controller ?: return
 		val cap = state.capBps ?: return
 		if (target == cap) return
@@ -491,14 +527,13 @@ class AdaptiveBitrateController(
 		stallTicks = 0
 		aheadHistory.clear()
 		hasPlayed = false
-		// Cross over only on the way UP, and only with a deep buffer in hand. Pre-buffering fetches
-		// the same seconds of film twice, so it needs spare capacity to be worth anything - and on a
-		// step DOWN there is none by definition, because stepping down is what we do when the link
-		// cannot carry even what is playing. Build 31 crossed over in both directions and the
-		// downward one arrived with 5 s of buffer. The restarting swap below costs nothing extra and
-		// keeps handling those. Upward changes are also the ones that visibly stutter today.
-		val canCrossOver = !down && lastAhead >= CROSSOVER_MIN_BUFFER_MS
-		if (canCrossOver && userPreferences[UserPreferences.adaptivePreloadSwitch]) {
+		// Cross over in EITHER direction, but only out of a buffer deep enough to play out of while
+		// the replacement is fetched. The playhead reaches the hand-over point CROSSOVER_LEAD_MS after
+		// queueing whatever the link is doing, so the requirement is on the buffer, not on the
+		// direction. Build 32 refused every downward cross-over; it was right that a step down taken
+		// at 8 s of buffer cannot survive one, and wrong that a step down taken at 60 s cannot.
+		val minBuffer = if (down) CROSSOVER_MIN_BUFFER_DOWN_MS else CROSSOVER_MIN_BUFFER_MS
+		if (mayCrossOver && lastAhead >= minBuffer && userPreferences[UserPreferences.adaptivePreloadSwitch]) {
 			// Queue the new quality to begin a little ahead of here and let the player pre-buffer it
 			// while this stream carries on, then cross over when playback reaches that point. The
 			// tick loop above drives the rest; state.capBps only moves when the cross-over lands, so

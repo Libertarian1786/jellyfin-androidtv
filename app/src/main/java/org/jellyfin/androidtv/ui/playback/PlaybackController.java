@@ -919,16 +919,24 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         return mQueuedStreamInfo == null ? -1 : mQueuedStartMs;
     }
 
-    /** How much of the queued stream is pre-buffered, in ms, or -1 if none is queued. */
+    /** How much of the queued stream has actually arrived, in ms, or -1 if none is queued. */
     public long getQueuedBufferedMs() {
         return (mQueuedStreamInfo == null || !hasInitializedVideoManager()) ? -1 : mVideoManager.getQueuedBufferedMs();
+    }
+
+    /** Bytes received for the queued stream. Non-zero is the proof that pre-fetching ran. */
+    public long getQueuedBytes() {
+        return (mQueuedStreamInfo == null || !hasInitializedVideoManager()) ? -1 : mVideoManager.getQueuedBytes();
     }
 
     /** Crosses over to the queued stream. The picture continues; nothing is torn down. */
     public boolean completeCrossOver() {
         if (mQueuedStreamInfo == null || !hasInitializedVideoManager()) return false;
         long startedAt = mQueuedStartMs;
+        StreamInfo abandoned = mCurrentStreamInfo;
         if (!mVideoManager.crossOverToReplacement(startedAt)) return false;
+        // The stream we just left is still being encoded on the server. Nothing else stops it.
+        if (hasFragment()) playbackManager.getValue().stopTranscode(mFragment, abandoned);
         mCurrentStreamInfo = mQueuedStreamInfo;
         if (mQueuedOptions != null) mCurrentOptions = mQueuedOptions;
         mQueuedStreamInfo = null;
@@ -965,11 +973,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         }
         refreshCurrentPosition();
         final long position = mCurrentPosition;
+        final StreamInfo abandoned = mCurrentStreamInfo;
         final VideoOptions options = buildExoPlayerOptions(null, null, item);
         playbackManager.getValue().getVideoStreamInfo(mFragment, options, position * 10000, new Response<StreamInfo>(mFragment.getLifecycle()) {
             @Override
             public void onResponse(StreamInfo response) {
                 if (!isActive() || mVideoManager == null || mFragment == null) return;
+                // Stop the encode we are leaving, or it competes with the one we are starting.
+                playbackManager.getValue().stopTranscode(mFragment, abandoned);
                 mCurrentOptions = options;
                 // hold the last frame through the reset; cleared again once the new stream is ready
                 mVideoManager.setKeepContentOnReset(true);

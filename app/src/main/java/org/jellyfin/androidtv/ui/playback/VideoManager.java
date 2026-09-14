@@ -37,6 +37,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.analytics.AnalyticsListener;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.source.LoadEventInfo;
+import androidx.media3.exoplayer.source.MediaLoadData;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.exoplayer.util.EventLogger;
@@ -87,6 +89,17 @@ public class VideoManager {
      * rather than at the start of the film, and everything outside this class works in film time.
      */
     private long mTimelineOffsetMs = 0;
+    /**
+     * What has actually been fetched for the queued replacement, counted from the load events
+     * themselves. The obvious figure - getTotalBufferedDuration() minus the playing stream's own
+     * buffer - cannot work: ExoPlayer derives the total from the LOADING period, and a preloaded
+     * item lives in a pool outside the play queue, so it reads ~0 whether preloading worked or not.
+     * Keyed on the replacement's PlaySessionId, which appears in every URL of that stream.
+     */
+    private volatile String mQueuedSessionId;
+    private volatile long mQueuedBytes;
+    private volatile long mQueuedMediaEndMs = -1;
+    private volatile long mQueuedClipStartMs;
     private boolean nightModeEnabled;
 
     public boolean isContracted = false;
@@ -104,6 +117,23 @@ public class VideoManager {
         if (userPreferences.get(UserPreferences.Companion.getDebuggingEnabled())) {
             mExoPlayer.addAnalyticsListener(new EventLogger());
         }
+
+        // Counts what really arrives for a queued replacement stream, so the adaptive controller
+        // can tell a cross-over that pre-fetched from one that did not.
+        mExoPlayer.addAnalyticsListener(new AnalyticsListener() {
+            @Override
+            public void onLoadCompleted(AnalyticsListener.EventTime eventTime,
+                                        LoadEventInfo loadEventInfo, MediaLoadData mediaLoadData) {
+                String session = mQueuedSessionId;
+                if (session == null || loadEventInfo.uri == null) return;
+                if (!loadEventInfo.uri.toString().contains(session)) return;
+                mQueuedBytes += loadEventInfo.bytesLoaded;
+                if (mediaLoadData.mediaEndTimeMs != C.TIME_UNSET
+                        && mediaLoadData.mediaEndTimeMs > mQueuedMediaEndMs) {
+                    mQueuedMediaEndMs = mediaLoadData.mediaEndTimeMs;
+                }
+            }
+        });
 
         // Volume normalisation (audio night mode).
         if (nightModeEnabled) {
@@ -365,6 +395,10 @@ public class VideoManager {
                         .build())
                 .build();
         mExoPlayer.addMediaItem(item);
+        mQueuedSessionId = streamInfo.getPlaySessionId();
+        mQueuedBytes = 0;
+        mQueuedMediaEndMs = -1;
+        mQueuedClipStartMs = Math.max(0, startPositionMs);
         if (mLoadControl != null) mLoadControl.setPreloadAllowed(true);
         // Playlist preloading is OFF unless you ask for it: PreloadConfiguration.DEFAULT carries
         // TIME_UNSET, so the queue never designates anything to preload and shouldContinuePreloading
@@ -374,10 +408,24 @@ public class VideoManager {
         return true;
     }
 
-    /** How much of the queued replacement has been pre-buffered, in ms; -1 if nothing is queued. */
+    /**
+     * How much of the queued replacement has actually arrived, in ms of film, or -1 if nothing is
+     * queued. Measured from its own load events - see {@link #mQueuedSessionId} for why the
+     * player's buffered-duration figures cannot answer this.
+     */
     public long getQueuedBufferedMs() {
         if (!isInitialized() || mExoPlayer.getMediaItemCount() < 2) return -1;
-        return mExoPlayer.getTotalBufferedDuration() - (mExoPlayer.getBufferedPosition() - mExoPlayer.getCurrentPosition());
+        long end = mQueuedMediaEndMs;
+        if (end < 0) return 0;
+        // Load events report media time within the WINDOW, and a clipped window starts at zero,
+        // so the figure may already be relative to the clip start. Both readings are accepted.
+        long start = mQueuedClipStartMs;
+        return end >= start ? end - start : end;
+    }
+
+    /** Bytes received for the queued replacement. Non-zero is the proof that pre-fetching ran. */
+    public long getQueuedBytes() {
+        return mQueuedBytes;
     }
 
     /**
@@ -391,6 +439,7 @@ public class VideoManager {
         if (mExoPlayer.getCurrentMediaItemIndex() > 0) mExoPlayer.removeMediaItem(0);
         mTimelineOffsetMs = Math.max(0, startPositionMs);
         lastExoPlayerPosition = -1;
+        mQueuedSessionId = null;
         if (mLoadControl != null) mLoadControl.setPreloadAllowed(false);
         mExoPlayer.setPreloadConfiguration(ExoPlayer.PreloadConfiguration.DEFAULT);
         Timber.i("Adaptive bitrate: crossed over to the queued stream");
@@ -399,6 +448,7 @@ public class VideoManager {
 
     /** Throws away a queued replacement that is no longer wanted. */
     public void discardReplacement() {
+        mQueuedSessionId = null;
         if (mLoadControl != null) mLoadControl.setPreloadAllowed(false);
         if (isInitialized()) mExoPlayer.setPreloadConfiguration(ExoPlayer.PreloadConfiguration.DEFAULT);
         if (isInitialized() && mExoPlayer.getMediaItemCount() > 1) {

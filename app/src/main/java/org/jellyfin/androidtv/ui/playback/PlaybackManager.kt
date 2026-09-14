@@ -16,6 +16,7 @@ import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.model.api.PlayMethod
 import org.jellyfin.sdk.model.api.PlaybackInfoDto
 import org.jellyfin.sdk.model.api.PlaybackInfoResponse
+import timber.log.Timber
 
 private fun createStreamInfo(
 	api: ApiClient,
@@ -71,6 +72,26 @@ class PlaybackManager(
 			onSuccess = { callback.onResponse(it) },
 			onFailure = { callback.onError(Exception(it)) },
 		)
+	}
+
+	/**
+	 * Tells the server to stop an encode we have finished with. Every quality change asks for a new
+	 * stream, and until now nothing ever stopped the old one: [changeVideoStream] is the only caller
+	 * of stopEncodingProcess and it is only used for an audio or subtitle change. So each swap left
+	 * an orphaned ffmpeg competing with the replacement for the same CPU until Jellyfin's inactivity
+	 * reaper noticed - exactly while the replacement most needs to sprint.
+	 */
+	fun stopTranscode(
+		lifecycleOwner: LifecycleOwner,
+		stream: StreamInfo?,
+	) = lifecycleOwner.lifecycleScope.launch {
+		val session = stream?.playSessionId ?: return@launch
+		if (stream.playMethod == PlayMethod.DIRECT_PLAY) return@launch
+		try {
+			withContext(Dispatchers.IO) { api.hlsSegmentApi.stopEncodingProcess(api.deviceInfo.id, session) }
+		} catch (error: Exception) {
+			Timber.w(error, "Could not stop the encode for play session %s", session)
+		}
 	}
 
 	fun changeVideoStream(
