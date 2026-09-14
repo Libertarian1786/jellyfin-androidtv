@@ -877,6 +877,75 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         play(mCurrentPosition);
     }
 
+    private StreamInfo mQueuedStreamInfo;
+    private VideoOptions mQueuedOptions;
+    private long mQueuedStartMs = -1;
+
+    /**
+     * Begins a cross-over: asks the server for the stream at the new cap, then queues it to begin a
+     * little way ahead of where we are now and lets the player pre-buffer it while the current one
+     * carries on. Nothing changes on screen yet. Returns immediately; readiness is polled.
+     */
+    public void beginCrossOver(long leadMs) {
+        final BaseItemDto item = getCurrentlyPlayingItem();
+        if (!hasInitializedVideoManager() || !hasFragment() || item == null || mCurrentStreamInfo == null || isLiveTv) return;
+        if (mQueuedStreamInfo != null) return;
+        refreshCurrentPosition();
+        final long startAt = mCurrentPosition + leadMs;
+        final VideoOptions options = buildExoPlayerOptions(null, null, item);
+        mQueuedStartMs = startAt;
+        playbackManager.getValue().getVideoStreamInfo(mFragment, options, startAt * 10000, new Response<StreamInfo>(mFragment.getLifecycle()) {
+            @Override
+            public void onResponse(StreamInfo response) {
+                if (!isActive() || mVideoManager == null) { mQueuedStartMs = -1; return; }
+                if (mVideoManager.queueReplacement(api.getValue(), response, startAt)) {
+                    mQueuedStreamInfo = response;
+                    mQueuedOptions = options;
+                } else {
+                    mQueuedStartMs = -1;
+                }
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                Timber.e(exception, "Adaptive bitrate: could not queue the replacement stream");
+                mQueuedStartMs = -1;
+            }
+        });
+    }
+
+    /** Where the queued stream begins, or -1 if none is queued. */
+    public long getQueuedStartMs() {
+        return mQueuedStreamInfo == null ? -1 : mQueuedStartMs;
+    }
+
+    /** How much of the queued stream is pre-buffered, in ms, or -1 if none is queued. */
+    public long getQueuedBufferedMs() {
+        return (mQueuedStreamInfo == null || !hasInitializedVideoManager()) ? -1 : mVideoManager.getQueuedBufferedMs();
+    }
+
+    /** Crosses over to the queued stream. The picture continues; nothing is torn down. */
+    public boolean completeCrossOver() {
+        if (mQueuedStreamInfo == null || !hasInitializedVideoManager()) return false;
+        if (!mVideoManager.crossOverToReplacement()) return false;
+        mCurrentStreamInfo = mQueuedStreamInfo;
+        if (mQueuedOptions != null) mCurrentOptions = mQueuedOptions;
+        mQueuedStreamInfo = null;
+        mQueuedOptions = null;
+        mQueuedStartMs = -1;
+        adaptiveBitrate.getValue().onStreamStarted(this);
+        return true;
+    }
+
+    /** Throws away a queued stream we no longer want. */
+    public void abandonCrossOver() {
+        if (mQueuedStreamInfo == null) return;
+        mQueuedStreamInfo = null;
+        mQueuedOptions = null;
+        mQueuedStartMs = -1;
+        if (hasInitializedVideoManager()) mVideoManager.discardReplacement();
+    }
+
     /**
      * Changes streaming quality without the blank gap a full restart leaves on screen.
      *

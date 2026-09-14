@@ -63,6 +63,12 @@ class DeveloperPreferencesScreen : OptionsFragment() {
 			}
 
 			checkbox {
+				setTitle(R.string.pref_adaptive_preload_switch)
+				setContent(R.string.pref_adaptive_preload_switch_description)
+				bind(userPreferences, UserPreferences.adaptivePreloadSwitch)
+			}
+
+			checkbox {
 				setTitle(R.string.prefer_exoplayer_ffmpeg)
 				setContent(R.string.prefer_exoplayer_ffmpeg_content)
 

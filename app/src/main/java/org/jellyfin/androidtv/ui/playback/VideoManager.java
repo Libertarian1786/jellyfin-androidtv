@@ -73,6 +73,7 @@ public class VideoManager {
     private PlaybackOverlayFragmentHelper _helper;
     public ExoPlayer mExoPlayer;
     private DefaultBandwidthMeter mBandwidthMeter;
+    private PreloadingLoadControl mLoadControl;
     private PlayerView mExoPlayerView;
     private Handler mHandler = new Handler();
 
@@ -244,16 +245,13 @@ public class VideoManager {
         // prioritizeTimeOverSizeThresholds=false keeps targetBufferBytes as a HARD cap, which
         // protects the 2 GB Chromecasts from over-buffering at 4K bitrates. Constraints the
         // library enforces: playback <= min, afterRebuffer <= min, min <= max.
-        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                        /* minBufferMs */ 60_000,
-                        /* maxBufferMs */ 180_000,
-                        /* bufferForPlaybackMs */ 2_500,
-                        /* bufferForPlaybackAfterRebufferMs */ 15_000)
-                .setTargetBufferBytes(160 * 1024 * 1024)
-                .setPrioritizeTimeOverSizeThresholds(false)
-                .build();
-        exoPlayerBuilder.setLoadControl(loadControl);
+        mLoadControl = new PreloadingLoadControl(
+                /* minBufferMs */ 60_000,
+                /* maxBufferMs */ 180_000,
+                /* bufferForPlaybackMs */ 2_500,
+                /* bufferForPlaybackAfterRebufferMs */ 15_000,
+                /* targetBufferBytes */ 160 * 1024 * 1024);
+        exoPlayerBuilder.setLoadControl(mLoadControl);
 
         return exoPlayerBuilder;
     }
@@ -338,6 +336,51 @@ public class VideoManager {
             return bufferedPosition;
         }
         return -1;
+    }
+
+    /**
+     * Queues a second stream that begins at startPositionMs and lets the player pre-buffer it while
+     * the current one keeps playing. Returns false if there is already one queued.
+     */
+    public boolean queueReplacement(ApiClient api, StreamInfo streamInfo, long startPositionMs) {
+        if (!isInitialized() || mExoPlayer.getMediaItemCount() > 1) return false;
+        String path = streamInfo.getMediaUrl();
+        if (path == null) return false;
+        MediaItem item = new MediaItem.Builder()
+                .setUri(Uri.parse(path))
+                .setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(Math.max(0, startPositionMs))
+                        .build())
+                .build();
+        mExoPlayer.addMediaItem(item);
+        if (mLoadControl != null) mLoadControl.setPreloadAllowed(true);
+        Timber.i("Adaptive bitrate: queued a replacement stream starting at %d ms", startPositionMs);
+        return true;
+    }
+
+    /** How much of the queued replacement has been pre-buffered, in ms; -1 if nothing is queued. */
+    public long getQueuedBufferedMs() {
+        if (!isInitialized() || mExoPlayer.getMediaItemCount() < 2) return -1;
+        return mExoPlayer.getTotalBufferedDuration() - (mExoPlayer.getBufferedPosition() - mExoPlayer.getCurrentPosition());
+    }
+
+    /** Crosses over to the queued stream and drops the old one. */
+    public boolean crossOverToReplacement() {
+        if (!isInitialized() || mExoPlayer.getMediaItemCount() < 2) return false;
+        mExoPlayer.seekToNextMediaItem();
+        if (mExoPlayer.getCurrentMediaItemIndex() > 0) mExoPlayer.removeMediaItem(0);
+        if (mLoadControl != null) mLoadControl.setPreloadAllowed(false);
+        Timber.i("Adaptive bitrate: crossed over to the queued stream");
+        return true;
+    }
+
+    /** Throws away a queued replacement that is no longer wanted. */
+    public void discardReplacement() {
+        if (mLoadControl != null) mLoadControl.setPreloadAllowed(false);
+        if (isInitialized() && mExoPlayer.getMediaItemCount() > 1) {
+            mExoPlayer.removeMediaItem(mExoPlayer.getMediaItemCount() - 1);
+            Timber.i("Adaptive bitrate: discarded the queued replacement");
+        }
     }
 
     /** The video format ExoPlayer is rendering right now, or null before playback starts. */

@@ -137,6 +137,12 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var adaptiveForceRemote = booleanPreference("mccoy_adaptive_force_remote", false)
 
 		/**
+		 * McCoy: pre-buffer the replacement stream while the current one still plays, then cross
+		 * over, instead of stopping and restarting. Experimental, off until proven on a TV.
+		 */
+		var adaptivePreloadSwitch = booleanPreference("mccoy_adaptive_preload_switch", false)
+
+		/**
 		 * Shortcut used for changing the audio track
 		 */
 		var shortcutAudioTrack = intPreference("shortcut_audio_track", KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK)

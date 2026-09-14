@@ -84,6 +84,13 @@ private const val UP_AFTER_DOWN_MS = 180_000L
 
 /** How long a rung stays off-limits after the link forced us off it. */
 private const val FAILED_RETRY_MS = 300_000L
+
+/** How far ahead of the current position a pre-buffered replacement is told to begin. */
+private const val CROSSOVER_LEAD_MS = 20_000L
+/** Cross over once this much of the replacement is pre-buffered. */
+private const val CROSSOVER_READY_MS = 4_000L
+/** Give up waiting for the replacement after this and fall back to the restarting swap. */
+private const val CROSSOVER_TIMEOUT_MS = 40_000L
 private const val NEAR_END_MS = 2_000L
 private const val BUFFER_FULL_MAX_MS = 200_000L
 
@@ -135,6 +142,9 @@ class AdaptiveBitrateController(
 	private var lastSwitchAt = 0L
 	private var lastSwitchWasDown = false
 	private var hasPlayed = false
+	/** Set while a replacement stream is queued and pre-buffering, with the cap it was queued for. */
+	private var crossingTo = 0
+	private var crossingSince = 0L
 	/** The cap we were forced to abandon, and when: do not climb back to it for a while. */
 	private var failedCapBps = 0
 	private var failedAt = 0L
@@ -305,6 +315,41 @@ class AdaptiveBitrateController(
 
 		// Stalled: it was playing, has now stopped, and has nothing buffered to play.
 		stallTicks = if (hasPlayed && !playing && ahead < STALL_AHEAD_MS && !nearEnd) stallTicks + 1 else 0
+		// A cross-over in flight owns the tick: watch it, and do not start another change.
+		if (crossingTo > 0) {
+			val queuedStart = c.queuedStartMs
+			val queuedBuffered = c.queuedBufferedMs
+			val waited = now() - crossingSince
+			when {
+				queuedStart < 0 && waited > CROSSOVER_TIMEOUT_MS -> {
+					Timber.w("Adaptive bitrate: the replacement never arrived, falling back to a restart")
+					state.capBps = crossingTo
+					crossingTo = 0
+					c.abandonCrossOver()
+					c.switchQualitySmoothly()
+					return
+				}
+				queuedStart >= 0 && queuedBuffered >= CROSSOVER_READY_MS && c.currentPosition >= queuedStart - TICK_MS -> {
+					Timber.i(
+						"Adaptive bitrate: crossing over to %s at %.1f s with %.1f s pre-buffered",
+						mbit(crossingTo.toLong()), queuedStart / 1000.0, queuedBuffered / 1000.0,
+					)
+					state.capBps = crossingTo
+					crossingTo = 0
+					if (!c.completeCrossOver()) c.switchQualitySmoothly()
+					return
+				}
+				waited > CROSSOVER_TIMEOUT_MS -> {
+					Timber.w("Adaptive bitrate: the replacement did not buffer in time, falling back to a restart")
+					state.capBps = crossingTo
+					crossingTo = 0
+					c.abandonCrossOver()
+					c.switchQualitySmoothly()
+					return
+				}
+				else -> return
+			}
+		}
 		if (!hasPlayed || sinceStart < WARMUP_MS) return
 
 		val tier = ladderIndex(cap)
@@ -410,6 +455,18 @@ class AdaptiveBitrateController(
 		stallTicks = 0
 		aheadHistory.clear()
 		hasPlayed = false
+		if (userPreferences[UserPreferences.adaptivePreloadSwitch]) {
+			// Queue the new quality to begin a little ahead of here and let the player pre-buffer it
+			// while this stream carries on, then cross over when playback reaches that point. The
+			// tick loop above drives the rest; state.capBps only moves when the cross-over lands, so
+			// the profile keeps describing the stream that is actually playing until then.
+			crossingTo = target
+			crossingSince = now()
+			// state.capBps stays at the target: createDeviceProfile reads it when the request is
+			// built, so restoring the old value here would fetch the replacement at the old bitrate.
+			c.beginCrossOver(CROSSOVER_LEAD_MS)
+			return
+		}
 		// Swaps to a stream at the new cap while the current one plays on out of its buffer, so the
 		// change is not a visible restart; createDeviceProfile picks up the new cap.
 		c.switchQualitySmoothly()
