@@ -79,6 +79,8 @@ public class VideoManager {
     private PreloadingLoadControl mLoadControl;
     /** Fallback only: every cross-over passes its own budget, sized from the target bitrate. */
     private static final long PRELOAD_TARGET_MS = 20_000;
+    /** How long to leave the finished stream in the playlist so the replacement can be reclaimed. */
+    private static final long DROP_OLD_ITEM_DELAY_MS = 5_000;
     private PlayerView mExoPlayerView;
     private Handler mHandler = new Handler();
 
@@ -447,13 +449,25 @@ public class VideoManager {
     public boolean crossOverToReplacement(long startPositionMs) {
         if (!isInitialized() || mExoPlayer.getMediaItemCount() < 2) return false;
         mExoPlayer.seekToNextMediaItem();
-        if (mExoPlayer.getCurrentMediaItemIndex() > 0) mExoPlayer.removeMediaItem(0);
+        // Do NOT drop the old item here. seekToNextMediaItem searches the play QUEUE for the
+        // target period, and a preloaded one lives in a pool outside it, so the queue is cleared
+        // and the preloaded holder is only reclaimed on a later pass. Removing item 0 in the same
+        // breath releases the pool before that reclaim, and everything pre-fetched is thrown away
+        // - which is why a hand-over with 58 s and 10.7 MB in hand still went BUFFERING for 3.8 s.
+        mHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!isInitialized() || mExoPlayer.getMediaItemCount() < 2) return;
+                if (mExoPlayer.getCurrentMediaItemIndex() > 0) mExoPlayer.removeMediaItem(0);
+            }
+        }, DROP_OLD_ITEM_DELAY_MS);
         mTimelineOffsetMs = Math.max(0, startPositionMs);
         lastExoPlayerPosition = -1;
         mQueuedSessionId = null;
         if (mLoadControl != null) mLoadControl.setPreloadAllowed(false);
         mExoPlayer.setPreloadConfiguration(ExoPlayer.PreloadConfiguration.DEFAULT);
-        Timber.i("Adaptive bitrate: crossed over to the queued stream");
+        Timber.i("Adaptive bitrate: crossed over to the queued stream, player holds %d ms",
+                mExoPlayer.getTotalBufferedDuration());
         return true;
     }
 
