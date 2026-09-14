@@ -329,9 +329,13 @@ class AdaptiveBitrateController(
 					c.switchQualitySmoothly()
 					return
 				}
-				queuedStart >= 0 && queuedBuffered >= CROSSOVER_READY_MS && c.currentPosition >= queuedStart - TICK_MS -> {
+				// Cross over when playback REACHES the queued start. Do not gate on how much of the
+				// replacement appears buffered: the preload pool is separate from the playlist, so
+				// getTotalBufferedDuration cannot see it, and waiting on that figure made every
+				// cross-over time out (builds 29 and 30) whether or not preloading had worked.
+				queuedStart >= 0 && c.currentPosition >= queuedStart - TICK_MS -> {
 					Timber.i(
-						"Adaptive bitrate: crossing over to %s at %.1f s with %.1f s pre-buffered",
+						"Adaptive bitrate: crossing over to %s at %.1f s (replacement reports %.1f s buffered)",
 						mbit(crossingTo.toLong()), queuedStart / 1000.0, queuedBuffered / 1000.0,
 					)
 					state.capBps = crossingTo
