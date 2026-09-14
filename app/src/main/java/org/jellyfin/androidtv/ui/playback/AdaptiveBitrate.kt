@@ -139,14 +139,6 @@ private const val CROSSOVER_MAX_BUFFER_DOWN_MS = 130_000L
 /** How long a link measurement is worth remembering when judging a climb we cannot measure. */
 private const val LINK_MEMORY_MS = 300_000L
 
-/**
- * Step down THIS far ahead of running out when the change can be made smoothly. The ordinary
- * trigger waits until 45 s from empty, which on a gentle drain is not reached until the buffer is
- * down to about 11 s - too late to cross over, so every downward change took the restart. A smooth
- * change is nearly free, so it is taken while there is still buffer to make it with.
- */
-private const val CROSSOVER_ACT_BEFORE_EMPTY_MS = 300_000L
-
 /** Seconds of continuous draining before the early step down fires, so a brief dip cannot. */
 private const val DRAIN_HOLD_TICKS = 15
 
@@ -511,8 +503,13 @@ class AdaptiveBitrateController(
 		// triggers below fire with 20 s or 8 s in hand, which is not enough to cross over with.
 		val deepEnough = reallyDraining && ahead >= CROSSOVER_MIN_BUFFER_DOWN_MS &&
 			ahead <= CROSSOVER_MAX_BUFFER_DOWN_MS
+		// No projection test here, deliberately. "Will it run out within N seconds" was how this
+		// worked when every change cost a restart and the question was how long we could put one off.
+		// It also makes the trigger unreachable: on a gentle drain the projection is not met until the
+		// buffer is far below what a change-over needs, and on a steep one it is met almost at once.
+		// A buffer that has fallen steadily for DRAIN_HOLD_TICKS seconds already says what matters -
+		// the link is not carrying this stream - and a smooth change is cheap enough to act on that.
 		val smoothDown = deepEnough && drainTicks >= DRAIN_HOLD_TICKS &&
-			emptyingMs < CROSSOVER_ACT_BEFORE_EMPTY_MS &&
 			userPreferences[UserPreferences.adaptivePreloadSwitch]
 		val settledEnough = !settling || (reallyDraining && ahead < BUFFER_CRITICAL_MS)
 		if (playing && settledEnough && (runningOut || nearlyGone || smoothDown) && tier > 0 && sinceSwitch > DOWN_COOLDOWN_MS) {
