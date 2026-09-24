@@ -124,8 +124,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// Check for coroutine cancellation
 			if (!isActive) return@launch
 
-			// Curated home order. Recently Added (LATEST_MEDIA) is intentionally NOT added
-			// here — it is appended at the very bottom, below the themed collection rows.
+			// Curated home order. Recently Added (LATEST_MEDIA) is intentionally left out.
 			rows.add(helper.loadResumeVideo())            // Continue Watching
 			rows.add(helper.loadNextUp())                 // Next Up
 
@@ -172,18 +171,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// from the Collections library in the background.
 			addThemedCollectionRows()
 
-			// Recently Added ("Just added" for Movies + Shows) goes at the very bottom,
-			// below the themed rows.
-			if (isActive) {
-				val recentlyAdded = helper.loadRecentlyAdded(userViewsRepository.views.first())
-				withContext(Dispatchers.Main) {
-					recentlyAdded.addToRowsAdapter(
-						requireContext(),
-						CardPresenter(true, HOME_CARD_HEIGHT),
-						adapter as MutableObjectAdapter<Row>,
-					)
-				}
-			}
+			// No Recently Added row: David doesn't want it on any device (2026-09-23).
 
 			// Refresh the recommender cache in the background so the next home load
 			// reflects the latest watch history.
