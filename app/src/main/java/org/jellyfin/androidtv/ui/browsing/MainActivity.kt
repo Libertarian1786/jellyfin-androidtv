@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.browsing
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
@@ -46,10 +47,29 @@ class MainActivity : FragmentActivity() {
 
 	private lateinit var binding: ActivityMainBinding
 
-	private val backPressedCallback = object : OnBackPressedCallback(false) {
+	// Always handles Back: steps back through the app, and on the first screen asks before leaving
+	// instead of exiting on one stray press.
+	private val backPressedCallback = object : OnBackPressedCallback(true) {
 		override fun handleOnBackPressed() {
 			if (navigationRepository.canGoBack) navigationRepository.goBack()
+			else confirmExit()
 		}
+	}
+
+	private var exitDialog: AlertDialog? = null
+
+	private fun confirmExit() {
+		if (exitDialog?.isShowing == true) return
+		exitDialog = AlertDialog.Builder(this)
+			.setTitle("Exit The Real McCoy?")
+			.setPositiveButton("Exit") { _, _ -> finish() }
+			.setNegativeButton("Stay", null)
+			.create()
+			.apply {
+				// Stay has focus, so a second accidental OK doesn't exit either
+				setOnShowListener { getButton(AlertDialog.BUTTON_NEGATIVE)?.requestFocus() }
+				show()
+			}
 	}
 
 	override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,7 +92,6 @@ class MainActivity : FragmentActivity() {
 			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
 			.onEach { action ->
 				handleNavigationAction(action)
-				backPressedCallback.isEnabled = navigationRepository.canGoBack
 				interactionTrackerViewModel.notifyInteraction(canCancel = false, userInitiated = false)
 			}.launchIn(lifecycleScope)
 
