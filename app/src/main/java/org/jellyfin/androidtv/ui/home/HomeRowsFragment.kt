@@ -17,7 +17,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.withResumed
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -67,7 +69,10 @@ import org.koin.android.ext.android.inject
 import timber.log.Timber
 import java.time.LocalDate
 import java.util.UUID
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 /** Single knob for the height (dp) of all poster cards on the home rows. */
 private const val HOME_CARD_HEIGHT = 114
@@ -199,12 +204,17 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+				// Watch progress only moves Continue Watching / Next Up, and arrives every few
+				// seconds while anything plays on another device - refresh just those rows,
+				// at most every 30 s. Library changes come in bursts (a scan, artwork, theme
+				// songs), so a burst is coalesced into one full refresh after it goes quiet.
+				// Re-fetching all 60-odd rows per message froze the 2 GB Chromecast.
 				api.webSocket.subscribe<UserDataChangedMessage>()
-					.onEach { refreshRows(force = true, delayed = false) }
+					.onEach { progressRefresh.request() }
 					.launchIn(this)
 
 				api.webSocket.subscribe<LibraryChangedMessage>()
-					.onEach { refreshRows(force = true, delayed = false) }
+					.onEach { libraryRefresh.request() }
 					.launchIn(this)
 			}
 		}
@@ -360,7 +370,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		nowPlaying.update(requireContext(), adapter as MutableObjectAdapter<Row>)
 	}
 
-	private fun refreshRows(force: Boolean = false, delayed: Boolean = true) {
+	private fun refreshRows(
+		force: Boolean = false,
+		delayed: Boolean = true,
+		only: ((QueryType) -> Boolean)? = null,
+	) {
 		lifecycleScope.launch(Dispatchers.IO) {
 			if (delayed) delay(1.5.seconds)
 
@@ -370,8 +384,70 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// re-adds all items without clearing (duplicates the row) and would
 				// notify the RecyclerView from this IO thread.
 				if (rowAdapter?.queryType == QueryType.StaticItems) return@repeat
+				if (only != null && (rowAdapter == null || !only(rowAdapter.queryType))) return@repeat
 				if (force) rowAdapter?.Retrieve()
 				else rowAdapter?.ReRetrieveIfNeeded()
+			}
+		}
+	}
+
+	private val progressRefresh = ThrottledRefresh(30.seconds) {
+		refreshRows(force = true, delayed = false) { it == QueryType.Resume || it == QueryType.NextUp }
+	}
+
+	// A library scan sends messages for minutes; wait for a quiet minute (capped at five) so
+	// the shuffled collection rows are not reordered under the viewer every minute.
+	private val libraryRefresh = DebouncedRefresh(quiet = 60.seconds, maxWait = 5.minutes) {
+		refreshRows(force = true, delayed = false)
+	}
+
+	/**
+	 * Runs [action] at most once per [minGap]. A request inside the gap is not dropped: one
+	 * trailing run is scheduled for the end of the gap, and further requests fold into it.
+	 * Runs only while home is on screen (the fragment is merely detached during playback).
+	 */
+	private inner class ThrottledRefresh(
+		private val minGap: Duration,
+		private val action: () -> Unit,
+	) {
+		private var lastRun = TimeSource.Monotonic.markNow() - minGap
+		private var pending: Job? = null
+
+		fun request() {
+			if (pending?.isActive == true) return
+			val wait = minGap - lastRun.elapsedNow()
+			pending = lifecycleScope.launch {
+				if (wait.isPositive()) delay(wait)
+				lifecycle.withResumed {
+					lastRun = TimeSource.Monotonic.markNow()
+					action()
+				}
+			}
+		}
+	}
+
+	/**
+	 * Runs [action] once requests have stopped for [quiet], but no later than [maxWait] after
+	 * the first request of a burst. Runs only while home is on screen.
+	 */
+	private inner class DebouncedRefresh(
+		private val quiet: Duration,
+		private val maxWait: Duration,
+		private val action: () -> Unit,
+	) {
+		private var burstStart: TimeSource.Monotonic.ValueTimeMark? = null
+		private var pending: Job? = null
+
+		fun request() {
+			val start = burstStart ?: TimeSource.Monotonic.markNow().also { burstStart = it }
+			pending?.cancel()
+			val wait = minOf(quiet, maxWait - start.elapsedNow())
+			pending = lifecycleScope.launch {
+				if (wait.isPositive()) delay(wait)
+				lifecycle.withResumed {
+					burstStart = null
+					action()
+				}
 			}
 		}
 	}
