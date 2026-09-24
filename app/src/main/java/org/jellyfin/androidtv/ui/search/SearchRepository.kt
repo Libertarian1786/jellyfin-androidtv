@@ -48,6 +48,24 @@ class SearchRepositoryImpl(
 			"ii" to "2", "iii" to "3", "iv" to "4", "vi" to "6", "vii" to "7", "viii" to "8", "ix" to "9",
 		)
 		private val initialStopWords = setOf("the", "of", "and", "a", "an")
+		private val leadingArticles = setOf("the", "a", "an")
+		private val titleParts = Regex("\\s*(?::|\\s-\\s)\\s*")
+
+		/**
+		 * Abbreviations people type for a title: the first letters of the whole title and of each
+		 * part after a colon, each with and without a leading article. "The Lord of the Rings: ..."
+		 * gives "lotr..."; "Star Trek: The Next Generation" gives "st..." and "tng".
+		 */
+		fun abbreviations(raw: String): Set<String> = buildSet {
+			for (part in listOf(raw) + raw.split(titleParts).drop(1)) {
+				val partWords = words(part)
+				if (partWords.isEmpty()) continue
+				add(partWords.joinToString("") { it.take(1) })
+				if (partWords.size > 1 && partWords.first() in leadingArticles) {
+					add(partWords.drop(1).joinToString("") { it.take(1) })
+				}
+			}
+		}
 
 		fun words(text: String): List<String> = Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD)
 			.replace(diacritics, "")
@@ -85,7 +103,7 @@ class SearchRepositoryImpl(
 		}
 	}
 
-	private class TitleName(val compact: String, val words: List<String>, val initials: String, val keyInitials: String)
+	private class TitleName(val compact: String, val words: List<String>, val abbreviations: Set<String>, val keyInitials: String)
 
 	private class TitleEntry(val id: UUID, val names: List<TitleName>, val sortName: String)
 
@@ -226,11 +244,13 @@ class SearchRepositoryImpl(
 			title == query -> 0
 			title.startsWith(query) -> 1
 			title.removePrefix("the").startsWith(query) -> 2
-			title.contains(query) -> 3
-			queryWords.size > 1 && queryWords.all { title.contains(it) } -> 4
-			// "lotr", "tmnt", "hp": the first letters of the title's words
+			// substrings only from 3 letters: "hp" inside "blair witch project" is noise
+			query.length >= 3 && title.contains(query) -> 3
+			// "star trek tng": every word is in the title or is one of its abbreviations
+			queryWords.size > 1 && queryWords.all { title.contains(it) || (it.length >= 2 && it in name.abbreviations) } -> 4
+			// "lotr", "tng", "hp": the first letters of the title's words or of a part of it
 			queryWords.size == 1 && query.length in 2..6 &&
-				(name.keyInitials.startsWith(query) || name.initials.startsWith(query)) -> 5
+				(name.keyInitials.startsWith(query) || name.abbreviations.any { it.startsWith(query) }) -> 5
 			// small typos: every query word is close to some title word
 			queryWords.any { typoBudget(it) > 0 } && queryWords.all { word ->
 				val budget = typoBudget(word)
@@ -295,11 +315,11 @@ class SearchRepositoryImpl(
 					else TitleName(
 						compact = titleWords.joinToString(""),
 						words = titleWords,
-						initials = titleWords.joinToString("") { it.take(1) },
+						abbreviations = abbreviations(raw),
 						keyInitials = titleWords.filterNot { it in initialStopWords }.joinToString("") { it.take(1) },
 					)
 				}
-				TitleEntry(item.id, names.ifEmpty { listOf(TitleName("", emptyList(), "", "")) }, item.sortName ?: item.name.orEmpty())
+				TitleEntry(item.id, names.ifEmpty { listOf(TitleName("", emptyList(), emptySet(), "")) }, item.sortName ?: item.name.orEmpty())
 			},
 			builtAt = TimeSource.Monotonic.markNow(),
 		).also { indexes[kind] = it }
