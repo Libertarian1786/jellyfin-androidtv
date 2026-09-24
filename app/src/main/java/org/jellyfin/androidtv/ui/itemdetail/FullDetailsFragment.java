@@ -1123,7 +1123,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
         // added in order of priority (should match res/menu/menu_details_more.xml)
         if (queueButton != null) actionsList.add(queueButton);
         if (trailerButton != null) actionsList.add(trailerButton);
-        if (shuffleButton != null) actionsList.add(shuffleButton);
+        // Shuffle is never folded into "More": it was buried there on every show page
         if (favButton != null) actionsList.add(favButton);
         if (goToSeriesButton != null) actionsList.add(goToSeriesButton);
 

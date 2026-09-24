@@ -624,6 +624,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         mCurrentOptions.setAudioStreamIndex(null); // reset audio stream index to allow auto selection on new item
 
+        // A quality swap keeps whatever zoom is on screen; a new item opens with its remembered one.
+        if (!seeklessStart) applyRememberedZoom(item);
+
         // A seekless start is already positioned, so leave mStartPosition at zero: onProgress()
         // then takes its "nothing to seek to" branch, stops the spinner and reports normally.
         mStartPosition = seeklessStart ? 0 : position;
@@ -1490,6 +1493,19 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     public void setZoom(@NonNull ZoomMode mode) {
         if (hasInitializedVideoManager())
             mVideoManager.setZoom(mode);
+        // Only the player's zoom menu calls this: remember the choice for this movie / show.
+        BaseItemDto item = getCurrentlyPlayingItem();
+        if (item != null && hasFragment() && mFragment.getContext() != null)
+            TitleZoomMemory.set(mFragment.getContext(), item, mode);
+    }
+
+    /** The remembered zoom for [item]'s movie or show, else the player-wide default. */
+    private void applyRememberedZoom(BaseItemDto item) {
+        if (!hasInitializedVideoManager()) return;
+        ZoomMode remembered = hasFragment() && mFragment.getContext() != null
+                ? TitleZoomMemory.get(mFragment.getContext(), item) : null;
+        mVideoManager.setZoom(remembered != null ? remembered
+                : userPreferences.getValue().get(UserPreferences.Companion.getPlayerZoomMode()));
     }
 
     /**

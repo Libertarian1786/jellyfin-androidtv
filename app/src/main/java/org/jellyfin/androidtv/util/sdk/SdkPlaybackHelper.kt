@@ -13,6 +13,7 @@ import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.playback.PlaybackControllerContainer
 import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
+import org.jellyfin.androidtv.ui.playback.ShuffleMemory
 import org.jellyfin.androidtv.util.PlaybackHelper
 import org.jellyfin.androidtv.util.apiclient.Response
 import org.jellyfin.sdk.api.client.ApiClient
@@ -37,6 +38,7 @@ class SdkPlaybackHelper(
 	private val userPreferences: UserPreferences,
 	private val playbackLauncher: PlaybackLauncher,
 	private val playbackControllerContainer: PlaybackControllerContainer,
+	private val context: Context,
 ) : PlaybackHelper {
 	companion object {
 		const val ITEM_QUERY_LIMIT = 150
@@ -74,7 +76,17 @@ class SdkPlaybackHelper(
 		when (mainItem.type) {
 			BaseItemKind.EPISODE -> {
 				val seriesId = mainItem.seriesId
-				if (userPreferences[UserPreferences.mediaQueuingEnabled] && seriesId != null) {
+				if (seriesId != null && ShuffleMemory.isOn(context, seriesId)) {
+					// This show was last started with Shuffle: keep shuffling after this episode
+					val response by api.tvShowsApi.getEpisodes(
+						seriesId = seriesId,
+						isMissing = false,
+						sortBy = ItemSortBy.RANDOM,
+						fields = ItemRepository.itemFields,
+					)
+					(listOf(mainItem) + response.items.filterNot { it.id == mainItem.id }.shuffled())
+						.take(ITEM_QUERY_LIMIT)
+				} else if (userPreferences[UserPreferences.mediaQueuingEnabled] && seriesId != null) {
 					val response by api.tvShowsApi.getEpisodes(
 						seriesId = seriesId,
 						startItemId = mainItem.id,
@@ -90,17 +102,21 @@ class SdkPlaybackHelper(
 			}
 
 			BaseItemKind.SERIES -> {
+				ShuffleMemory.set(context, mainItem.id, shuffle)
+				// Shuffling fetches every episode and picks the queue locally, so a 178-episode
+				// show like Star Trek TNG can land anywhere, not only in the first 150.
 				val response by api.tvShowsApi.getEpisodes(
 					seriesId = mainItem.id,
 					isMissing = false,
 					sortBy = if (shuffle) ItemSortBy.RANDOM else ItemSortBy.SORT_NAME,
-					limit = ITEM_QUERY_LIMIT,
+					limit = if (shuffle) null else ITEM_QUERY_LIMIT,
 					fields = ItemRepository.itemFields,
 				)
-				response.items
+				if (shuffle) response.items.shuffled().take(ITEM_QUERY_LIMIT) else response.items
 			}
 
 			BaseItemKind.SEASON -> {
+				mainItem.seriesId?.let { ShuffleMemory.set(context, it, shuffle) }
 				val response by api.tvShowsApi.getEpisodes(
 					seriesId = requireNotNull(mainItem.seriesId),
 					seasonId = mainItem.id,
