@@ -43,6 +43,12 @@ class CustomizationPreferencesScreen : OptionsFragment() {
 			}
 
 			checkbox {
+				setTitle(R.string.pref_larger_text)
+				setContent(R.string.desc_larger_text)
+				bind(userPreferences, UserPreferences.largerText)
+			}
+
+			checkbox {
 				setTitle(R.string.lbl_show_backdrop)
 				setContent(R.string.pref_show_backdrop_description)
 				bind(userPreferences, UserPreferences.backdropEnabled)

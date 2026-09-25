@@ -64,7 +64,7 @@
     <string name="lbl_series">Series</string>
     <string name="lbl_seasons">Seasons</string>
     <string name="lbl_upcoming">Upcoming</string>
-    <string name="lbl_favorite">Favorite</string>
+    <string name="lbl_favorite">My List</string>
     <string name="lbl_watched">Watched</string>
     <string name="lbl_sd">SD</string>
     <string name="lbl_runs">"Runs"</string>
@@ -105,6 +105,8 @@
     <string name="lbl_mark_played">Mark played</string>
     <string name="lbl_remove_favorite">Remove from My List</string>
     <string name="lbl_add_favorite">Add to My List</string>
+    <string name="pref_larger_text">Larger text</string>
+    <string name="desc_larger_text">Makes the words across the app about 20% bigger. Takes effect the next time the app opens.</string>
     <string name="lbl_now_playing_track">%1$s of %2$s</string>
     <string name="lbl_now_playing_album">from %1$s</string>
     <string name="msg_no_playable_items">No playable items</string>

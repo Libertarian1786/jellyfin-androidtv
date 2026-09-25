@@ -60,6 +60,12 @@ class ClosedCaptionsAction(
 			}
 			setOnMenuItemClickListener { item ->
 				playbackController.setSubtitleIndex(item.itemId)
+				playbackController.currentlyPlayingItem?.let { playing ->
+					val stream = playbackController.currentMediaSource.mediaStreams?.firstOrNull {
+						it.type == MediaStreamType.SUBTITLE && it.index == item.itemId
+					}
+					org.jellyfin.androidtv.ui.playback.TrackMemory.saveSubtitle(context, playing, stream)
+				}
 				true
 			}
 		}

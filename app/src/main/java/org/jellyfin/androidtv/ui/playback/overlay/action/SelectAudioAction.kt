@@ -46,6 +46,9 @@ class SelectAudioAction(
 			}
 			setOnMenuItemClickListener { item ->
 				playbackController.switchAudioStream(item.itemId)
+				val stream = playbackController.currentMediaSource?.mediaStreams?.firstOrNull { it.index == item.itemId }
+				val playing = playbackController.currentlyPlayingItem
+				if (stream != null && playing != null) org.jellyfin.androidtv.ui.playback.TrackMemory.saveAudio(context, playing, stream)
 				true
 			}
 		}

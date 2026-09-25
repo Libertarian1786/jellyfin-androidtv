@@ -650,6 +650,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         // still turn a track on manually via the subtitle menu (PlaybackControllerHelper.setSubtitleIndex),
         // which is a fully independent code path from this initial selection.
         mCurrentOptions.setSubtitleStreamIndex(null);
+        // ...unless the viewer turned subtitles on for this show before (TrackMemory)
+        if (mFragment != null && mFragment.getContext() != null) {
+            Integer rememberedSub = TrackMemory.subtitleIndex(mFragment.getContext(), item, response.getMediaSource().getMediaStreams());
+            if (rememberedSub != null) mCurrentOptions.setSubtitleStreamIndex(rememberedSub);
+        }
         setDefaultAudioIndex(response);
         Timber.i("default audio index set to %s remote default %s", mDefaultAudioIndex, response.getMediaSource().getDefaultAudioStreamIndex());
         Timber.i("default sub index set to %s remote default %s", mCurrentOptions.getSubtitleStreamIndex(), response.getMediaSource().getDefaultSubtitleStreamIndex());
@@ -1324,6 +1329,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         BaseItemDto nextItem = getNextItem();
         BaseItemDto curItem = getCurrentlyPlayingItem();
+        // Sleep timer set to "after this one"
+        if (curItem != null && curItem.getType() != BaseItemKind.TRAILER && SleepTimer.consumeEndOfItem()) {
+            endPlayback(true);
+            return;
+        }
         if (nextItem == null || curItem == null) {
             endPlayback(true);
             return;
@@ -1392,8 +1402,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
             // if track switching is done without rebuilding the stream, mCurrentOptions is updated
             // otherwise, use the server default
+            Integer rememberedAudio = mFragment != null && mFragment.getContext() != null
+                    ? TrackMemory.audioIndex(mFragment.getContext(), getCurrentlyPlayingItem(), getCurrentMediaSource().getMediaStreams())
+                    : null;
             if (mCurrentOptions.getAudioStreamIndex() != null) {
                 eligibleAudioTrack = mCurrentOptions.getAudioStreamIndex();
+            } else if (rememberedAudio != null) {
+                // the language picked for this show before
+                eligibleAudioTrack = rememberedAudio;
             } else if (getCurrentMediaSource().getDefaultAudioStreamIndex() != null) {
                 eligibleAudioTrack = getCurrentMediaSource().getDefaultAudioStreamIndex();
             }

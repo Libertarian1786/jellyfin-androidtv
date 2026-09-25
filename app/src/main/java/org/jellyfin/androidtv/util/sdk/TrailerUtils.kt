@@ -11,6 +11,7 @@ object TrailerUtils {
 	private const val YOUTUBE_URL = "https://youtube.com/watch?v="
 	private const val YOUTUBE_ID_LENGTH = 11
 	private const val FRAMEWORK_STUB_PACKAGE = "com.android.tv.frameworkpackagestubs"
+	private const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
 
 	@JvmStatic
 	fun getExternalTrailerIntent(src: String): Intent {
@@ -20,6 +21,10 @@ object TrailerUtils {
 		if (uri.host?.endsWith(YOUTUBE_HOST) == true) {
 			val id = uri.getQueryParameter(YOUTUBE_ID_PARAMETER).orEmpty()
 			if (id.length == YOUTUBE_ID_LENGTH) return Intent(Intent.ACTION_VIEW, "$YOUTUBE_URL$id".toUri())
+				// YouTube for TV opens its standalone player and closes itself when the trailer ends,
+				// landing back in this app instead of on the YouTube home screen (checked on the
+				// Master Bedroom Chromecast 9/24). Other apps ignore the extra.
+				.putExtra("finish_on_ended", true)
 		}
 
 		return Intent(Intent.ACTION_VIEW, uri)
@@ -28,6 +33,8 @@ object TrailerUtils {
 	@JvmStatic
 	fun getExternalTrailerIntent(context: Context, item: BaseItemDto): Intent? = item.remoteTrailers.orEmpty()
 		.mapNotNull { it.url?.let(::getExternalTrailerIntent) }
+		// Prefer the YouTube TV app itself over a chooser or browser
+		.flatMap { listOf(Intent(it).setPackage(YOUTUBE_TV_PACKAGE), it) }
 		.firstOrNull {
 			val component = it.resolveActivity(context.packageManager)
 

@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.ui.browsing
 
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
@@ -47,6 +48,7 @@ class MainActivity : FragmentActivity() {
 	private val workManager by inject<WorkManager>()
 	private val adaptiveBitrate by inject<AdaptiveBitrateController>()
 	private val playbackControllerContainer by inject<PlaybackControllerContainer>()
+	private val api by inject<org.jellyfin.sdk.api.client.ApiClient>()
 
 	private lateinit var binding: ActivityMainBinding
 
@@ -73,6 +75,19 @@ class MainActivity : FragmentActivity() {
 				setOnShowListener { getButton(AlertDialog.BUTTON_NEGATIVE)?.requestFocus() }
 				show()
 			}
+	}
+
+	// Larger text setting: scale every sp-sized text in this activity by 20%
+	override fun attachBaseContext(newBase: Context) {
+		val larger = runCatching {
+			org.koin.java.KoinJavaComponent.get<org.jellyfin.androidtv.preference.UserPreferences>(
+				org.jellyfin.androidtv.preference.UserPreferences::class.java
+			)[org.jellyfin.androidtv.preference.UserPreferences.largerText]
+		}.getOrDefault(false)
+		if (!larger) return super.attachBaseContext(newBase)
+		val config = android.content.res.Configuration(newBase.resources.configuration)
+		config.fontScale = config.fontScale * 1.2f
+		super.attachBaseContext(newBase.createConfigurationContext(config))
 	}
 
 	override fun onCreate(savedInstanceState: Bundle?) {
@@ -118,6 +133,13 @@ class MainActivity : FragmentActivity() {
 		applyTheme()
 
 		interactionTrackerViewModel.activityPaused = false
+
+		// Not while something is playing: the player has its own error handling
+		if (playbackControllerContainer.playbackController?.hasFragment() != true) {
+			ServerReachability.check(this, api, onRecovered = {
+				navigationRepository.reset(Destinations.home, clearHistory = true)
+			})
+		}
 	}
 
 	private fun validateAuthentication(): Boolean {

@@ -121,6 +121,11 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var audioNightMode = enumPreference("audio_night_mode", false)
 
 		/**
+		 * Larger text across the app (applied when the app next opens)
+		 */
+		var largerText = booleanPreference("larger_text", false)
+
+		/**
 		 * Enable AC3
 		 */
 		var ac3Enabled = booleanPreference("pref_bitstream_ac3", true)
