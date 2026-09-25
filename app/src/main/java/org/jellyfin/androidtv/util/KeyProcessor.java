@@ -48,6 +48,7 @@ public class KeyProcessor {
     public static final int MENU_INSTANT_MIX = 11;
     public static final int MENU_CLEAR_QUEUE = 12;
     public static final int MENU_TOGGLE_SHUFFLE = 13;
+    public static final int MENU_REMOVE_RESUME = 14;
 
     private final Lazy<MediaManager> mediaManager = KoinJavaComponent.<MediaManager>inject(MediaManager.class);
     private final Lazy<NavigationRepository> navigationRepository = KoinJavaComponent.<NavigationRepository>inject(NavigationRepository.class);
@@ -234,6 +235,9 @@ public class KeyProcessor {
                     menu.getMenu().add(0, MENU_INSTANT_MIX, order++, R.string.lbl_instant_mix);
                 }
             } else {
+                if (userData != null && userData.getPlaybackPositionTicks() > 0) {
+                    menu.getMenu().add(0, MENU_REMOVE_RESUME, order++, "Remove from Continue Watching");
+                }
                 if (userData != null && userData.getPlayed()) {
                     menu.getMenu().add(0, MENU_UNMARK_PLAYED, order++, activity.getString(R.string.lbl_mark_unplayed));
                 } else {
@@ -320,6 +324,12 @@ public class KeyProcessor {
                     return true;
                 case MENU_UNMARK_PLAYED:
                     togglePlayed(activity, item.getId(), false);
+                    return true;
+                case MENU_REMOVE_RESUME:
+                    CoroutineUtils.runOnLifecycle(activity.getLifecycle(), (scope, continuation) ->
+                            itemMutationRepository.getValue().clearResume(item.getId(), continuation)
+                    );
+                    customMessageRepository.getValue().pushMessage(CustomMessage.RefreshCurrentItem.INSTANCE);
                     return true;
                 case MENU_GOTO_NOW_PLAYING:
                     navigationRepository.getValue().navigate(Destinations.INSTANCE.getNowPlaying());

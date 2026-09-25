@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -22,7 +23,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
@@ -42,6 +46,11 @@ import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.primaryImage
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.itemsApi
+import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.ItemSortBy
+import org.jellyfin.sdk.model.api.request.GetItemsRequest
+import timber.log.Timber
 import org.koin.compose.koinInject
 
 enum class MainToolbarActiveButton {
@@ -79,6 +88,8 @@ private fun MainToolbar(
 	val mediaManager = koinInject<MediaManager>()
 	val sessionRepository = koinInject<SessionRepository>()
 	val activity = LocalActivity.current
+	val api = koinInject<ApiClient>()
+	val scope = rememberCoroutineScope()
 	val activeButtonColors = ButtonDefaults.colors(
 		containerColor = JellyfinTheme.colorScheme.buttonActive,
 		contentColor = JellyfinTheme.colorScheme.onButtonActive,
@@ -156,6 +167,30 @@ private fun MainToolbar(
 						},
 						colors = if (activeButton == MainToolbarActiveButton.Search) activeButtonColors else ButtonDefaults.colors(),
 						content = { Text(stringResource(R.string.lbl_search)) }
+					)
+					// Surprise me: open a random unwatched movie or show
+					Button(
+						onClick = {
+							scope.launch {
+								val pick = runCatching {
+									withContext(Dispatchers.IO) {
+										api.itemsApi.getItems(
+											GetItemsRequest(
+												includeItemTypes = setOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
+												recursive = true,
+												isPlayed = false,
+												sortBy = setOf(ItemSortBy.RANDOM),
+												limit = 1,
+												enableImages = false,
+												enableTotalRecordCount = false,
+											)
+										).content.items.firstOrNull()
+									}
+								}.onFailure { Timber.w(it, "Surprise me failed") }.getOrNull()
+								if (pick != null) navigationRepository.navigate(Destinations.itemDetails(pick.id))
+							}
+						},
+						content = { Text("Surprise me") }
 					)
 				}
 			}

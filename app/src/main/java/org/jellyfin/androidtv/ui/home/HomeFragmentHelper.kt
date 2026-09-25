@@ -8,6 +8,7 @@ import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.ui.browsing.BrowseRowDef
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.ItemFilter
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.MediaType
 import org.jellyfin.sdk.model.api.SortOrder
@@ -68,6 +69,39 @@ class HomeFragmentHelper(
 		return HomeFragmentBrowseRowDefRow(BrowseRowDef(context.getString(R.string.lbl_next_up), query, arrayOf(ChangeTriggerType.TvPlayback)))
 	}
 
+	/** My List: everything hearted (favorite button), newest first. */
+	fun loadMyList(): HomeFragmentRow {
+		val query = GetItemsRequest(
+			filters = setOf(ItemFilter.IS_FAVORITE),
+			includeItemTypes = setOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
+			recursive = true,
+			sortBy = setOf(ItemSortBy.DATE_CREATED),
+			sortOrder = setOf(SortOrder.DESCENDING),
+			fields = ItemRepository.browseFields,
+			imageTypeLimit = 1,
+			limit = ITEM_LIMIT_MY_LIST,
+		)
+
+		return HomeFragmentBrowseRowDefRow(BrowseRowDef("My List", query, ITEM_LIMIT_MY_LIST, arrayOf(ChangeTriggerType.FavoriteUpdate)))
+	}
+
+	/** Recently watched: finished movies and episodes, most recent first. */
+	fun loadRecentlyWatched(): HomeFragmentRow {
+		val query = GetItemsRequest(
+			filters = setOf(ItemFilter.IS_PLAYED),
+			includeItemTypes = setOf(BaseItemKind.MOVIE, BaseItemKind.EPISODE),
+			recursive = true,
+			sortBy = setOf(ItemSortBy.DATE_PLAYED),
+			sortOrder = setOf(SortOrder.DESCENDING),
+			fields = ItemRepository.browseFields,
+			imageTypeLimit = 1,
+			limit = ITEM_LIMIT_RECENTLY_WATCHED,
+		)
+
+		return HomeFragmentBrowseRowDefRow(BrowseRowDef("Recently watched", query, ITEM_LIMIT_RECENTLY_WATCHED,
+			arrayOf(ChangeTriggerType.TvPlayback, ChangeTriggerType.MoviePlayback)))
+	}
+
 	fun loadOnNow(): HomeFragmentRow {
 		val query = GetRecommendedProgramsRequest(
 			isAiring = true,
@@ -104,6 +138,8 @@ class HomeFragmentHelper(
 		private const val ITEM_LIMIT_NEXT_UP = 50
 		private const val ITEM_LIMIT_ON_NOW = 20
 		private const val ITEM_LIMIT_COLLECTION = 60
+		private const val ITEM_LIMIT_MY_LIST = 60
+		private const val ITEM_LIMIT_RECENTLY_WATCHED = 30
 
 		/** Bands watched in release order — these are NOT shuffled. */
 		private val CHRONOLOGICAL_BANDS = setOf("Bond", "Star Trek")

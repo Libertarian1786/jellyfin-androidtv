@@ -147,6 +147,7 @@ class SdkPlaybackHelper(
 			}
 
 			BaseItemKind.BOX_SET -> {
+				// Play all goes in release order (Bond, Star Trek, Harry Potter), not name order
 				val response by api.itemsApi.getItems(
 					parentId = mainItem.id,
 					isMissing = false,
@@ -155,7 +156,7 @@ class SdkPlaybackHelper(
 						BaseItemKind.MOVIE,
 						BaseItemKind.VIDEO
 					),
-					sortBy = if (shuffle) listOf(ItemSortBy.RANDOM) else null,
+					sortBy = if (shuffle) listOf(ItemSortBy.RANDOM) else listOf(ItemSortBy.PREMIERE_DATE, ItemSortBy.SORT_NAME),
 					recursive = true,
 					limit = ITEM_QUERY_LIMIT,
 					fields = ItemRepository.itemFields

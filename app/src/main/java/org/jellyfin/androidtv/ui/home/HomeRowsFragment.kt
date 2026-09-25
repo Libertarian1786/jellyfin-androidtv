@@ -132,6 +132,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// Curated home order. Recently Added (LATEST_MEDIA) is intentionally left out.
 			rows.add(helper.loadResumeVideo())            // Continue Watching
 			rows.add(helper.loadNextUp())                 // Next Up
+			rows.add(helper.loadMyList())                 // My List (hearted titles)
 
 			// Suggested for You — hydrated from the cached recommender id list. Bounded by a
 			// short timeout so a slow server can't hold up the whole home screen; the row is
@@ -143,6 +144,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				rows.add(HomeFragmentSuggestionsRow(requireContext().getString(R.string.suggested_for_you), suggestionItems))
 			}
 
+			rows.add(helper.loadRecentlyWatched())        // Recently watched
 			rows.add(HomeFragmentViewsRow(small = true))  // My media (library shortcuts)
 			rows.add(helper.loadResumeAudio())            // Continue Listening (hidden when empty)
 			if (currentUser.policy?.enableLiveTvAccess == true) {

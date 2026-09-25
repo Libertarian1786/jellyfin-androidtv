@@ -26,9 +26,11 @@ import org.jellyfin.androidtv.integration.LeanbackChannelWorker
 import org.jellyfin.androidtv.integration.McCoyUpdater
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
 import org.jellyfin.androidtv.ui.background.AppBackground
+import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationAction
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.AdaptiveBitrateController
+import org.jellyfin.androidtv.ui.playback.PlaybackControllerContainer
 import org.jellyfin.androidtv.ui.screensaver.InAppScreensaver
 import org.jellyfin.androidtv.ui.startup.StartupActivity
 import org.jellyfin.androidtv.util.applyTheme
@@ -44,6 +46,7 @@ class MainActivity : FragmentActivity() {
 	private val interactionTrackerViewModel by viewModel<InteractionTrackerViewModel>()
 	private val workManager by inject<WorkManager>()
 	private val adaptiveBitrate by inject<AdaptiveBitrateController>()
+	private val playbackControllerContainer by inject<PlaybackControllerContainer>()
 
 	private lateinit var binding: ActivityMainBinding
 
@@ -189,6 +192,35 @@ class MainActivity : FragmentActivity() {
 		interactionTrackerViewModel.notifyInteraction(false, userInitiated = true)
 	}
 
+	// Hold OK on a card = its menu (Google TV remotes have no menu key); hold Back = Home.
+	// Once a hold is taken over, the rest of that press (repeats and the release) is swallowed so
+	// the normal click / back step doesn't also fire.
+	private var heldKeyTaken = false
+
+	private fun handleHeldKey(event: KeyEvent): Boolean {
+		val isOk = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER ||
+			event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+		val isBack = event.keyCode == KeyEvent.KEYCODE_BACK
+		if (!isOk && !isBack) return false
+		if (playbackControllerContainer.playbackController?.hasFragment() == true) return false
+
+		if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) heldKeyTaken = false
+		if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount >= 1 && !heldKeyTaken) {
+			heldKeyTaken = if (isOk) {
+				val menuKey = KeyEvent(event.downTime, event.eventTime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MENU, 0)
+				onKeyEvent(KeyEvent.KEYCODE_MENU, menuKey)
+			} else {
+				navigationRepository.reset(Destinations.home, clearHistory = true)
+				true
+			}
+		}
+		if (heldKeyTaken) {
+			if (event.action == KeyEvent.ACTION_UP) heldKeyTaken = false
+			return true
+		}
+		return false
+	}
+
 	@Suppress("RestrictedApi") // False positive
 	override fun dispatchKeyEvent(event: KeyEvent): Boolean {
 		// Ignore the key event that closes the screensaver
@@ -196,6 +228,8 @@ class MainActivity : FragmentActivity() {
 			interactionTrackerViewModel.notifyInteraction(canCancel = event.action == KeyEvent.ACTION_UP, userInitiated = true)
 			return true
 		}
+
+		if (handleHeldKey(event)) return true
 
 		@Suppress("RestrictedApi") // False positive
 		return super.dispatchKeyEvent(event)
