@@ -472,6 +472,8 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
     }
 
     public void loadMoreItemsIfNeeded(int pos) {
+        // Rows ending in a "See all" card don't page: that card opens the rest
+        if (trailingItem != null) return;
         if (fullyLoaded) {
             //context.getLogger().Debug("Row is fully loaded");
             return;

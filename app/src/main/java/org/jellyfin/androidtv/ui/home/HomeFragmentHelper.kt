@@ -131,7 +131,7 @@ class HomeFragmentHelper(
 
 		// No paging: a shuffled band can't be paged without repeats. "See all" opens the whole band.
 		return HomeFragmentBrowseRowDefRow(
-			BrowseRowDef(name, query, 0),
+			BrowseRowDef(name, query, ITEM_LIMIT_COLLECTION),
 			GridButtonBaseRowItem(SeeAllButton(collectionId, name)),
 		)
 	}
