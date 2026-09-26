@@ -23,7 +23,7 @@ class UserViewsRepositoryImpl(
 	override val views = flow {
 		val views by api.userViewsApi.getUserViews()
 		val filteredViews = views.items
-			.filter { isSupported(it.collectionType) }
+			.filter { isSupported(it.collectionType) && !org.jellyfin.androidtv.util.IpadOnly.hides(it) }
 		emit(filteredViews)
 	}.flowOn(Dispatchers.IO)
 

@@ -146,7 +146,7 @@ class SearchRepositoryImpl(
 				.getOrDefault(serverItems)
 		} else serverItems
 
-		Result.success(items)
+		Result.success(items.filterNot { org.jellyfin.androidtv.util.IpadOnly.hides(it) })
 	} catch (e: ApiClientException) {
 		Timber.e(e, "Failed to search for items")
 		Result.failure(e)

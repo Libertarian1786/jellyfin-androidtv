@@ -40,6 +40,7 @@ import org.jellyfin.sdk.model.api.request.GetResumeItemsRequest
 import org.jellyfin.sdk.model.api.request.GetSeasonsRequest
 import org.jellyfin.sdk.model.api.request.GetSimilarItemsRequest
 import org.jellyfin.sdk.model.api.request.GetUpcomingEpisodesRequest
+import org.jellyfin.androidtv.util.IpadOnly
 import timber.log.Timber
 import kotlin.math.min
 
@@ -55,8 +56,8 @@ fun <T : Any> ItemRowAdapter.setItems(
 			add(this@setItems.get(it))
 		}
 
-		// Add loaded items
-		val mappedItems = items.mapIndexedNotNull { index, item ->
+		// Add loaded items (iPad-only libraries never reach a TV row)
+		val mappedItems = items.filterNot { IpadOnly.hides(it) }.mapIndexedNotNull { index, item ->
 			transform(item, itemsLoaded + index)
 		}
 		mappedItems.forEach { add(it) }
