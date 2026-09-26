@@ -489,7 +489,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			if (seeAll != null) {
 				navigationRepository.navigate(
 					Destinations.libraryBrowser(
-						BaseItemDto(id = seeAll.collectionId, type = BaseItemKind.BOX_SET, name = seeAll.collectionName, isFolder = true)
+						BaseItemDto(
+							id = seeAll.collectionId,
+							type = BaseItemKind.BOX_SET,
+							name = seeAll.collectionName,
+							isFolder = true,
+							// the grid keys its sort/size settings on this; a collection uses its own id
+							displayPreferencesId = seeAll.collectionId.toString().replace("-", ""),
+						)
 					)
 				)
 				return
