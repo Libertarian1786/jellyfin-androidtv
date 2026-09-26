@@ -32,6 +32,10 @@
         android:required="false" />
 
     <queries>
+        <!-- Tailscale: check it's installed and ask it to connect (TailscaleHelper) -->
+        <package android:name="com.tailscale.ipn" />
+        <!-- YouTube for TV: trailers open its standalone player (TrailerUtils) -->
+        <package android:name="com.google.android.youtube.tv" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data
