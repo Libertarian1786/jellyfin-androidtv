@@ -101,7 +101,17 @@ class StartupActivity : FragmentActivity() {
 		// back on after a restart: ask it to connect before anything talks to the server.
 		lifecycleScope.launch {
 			val server = runCatching { startupViewModel.getLastServer() }.getOrNull()
-			TailscaleHelper.ensureConnected(this@StartupActivity, server?.address)
+			val wasOff = TailscaleHelper.isTailscaleAddress(server?.address) && !TailscaleHelper.vpnRunning(this@StartupActivity)
+			val connected = TailscaleHelper.ensureConnected(this@StartupActivity, server?.address)
+			// The sign-in at app start checks the server, which failed while Tailscale was still
+			// off (landing on "Who's watching?"). Now that it's on, sign in again.
+			if (wasOff && connected) repeat(3) {
+				// The tunnel can report up a moment before traffic flows
+				delay(2_000)
+				if (sessionRepository.currentSession.value != null) return@launch
+				Timber.i("Tailscale is up; retrying sign-in")
+				sessionRepository.restoreSession(destroyOnly = false)
+			}
 		}
 
 		// Watchdog: on 9/26 the Travel TV sat on a blank startup screen (nothing shown, never
