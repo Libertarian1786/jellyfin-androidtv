@@ -15,7 +15,8 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
 class HomeFragmentBrowseRowDefRow(
-	private val browseRowDef: BrowseRowDef
+	private val browseRowDef: BrowseRowDef,
+	private val trailingItem: Any? = null,
 ) : HomeFragmentRow, KoinComponent {
 	private val userPreferences by inject<UserPreferences>()
 
@@ -38,6 +39,7 @@ class HomeFragmentBrowseRowDefRow(
 		}
 
 		rowAdapter.setReRetrieveTriggers(browseRowDef.changeTriggers)
+		rowAdapter.setTrailingItem(trailingItem)
 		val row = ListRow(header, rowAdapter)
 		rowAdapter.setRow(row)
 		rowAdapter.Retrieve()

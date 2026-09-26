@@ -710,8 +710,19 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         notifyRetrieveFinished(null);
     }
 
+    // Extra card kept at the end of the row (e.g. "See all" on a themed band)
+    @Nullable private Object trailingItem = null;
+
+    public void setTrailingItem(@Nullable Object item) {
+        trailingItem = item;
+    }
+
     protected void notifyRetrieveFinished(@Nullable Exception exception) {
         if (exception != null) Timber.w(exception, "Failed to retrieve items");
+        if (exception == null && trailingItem != null && size() > 0) {
+            if (indexOf(trailingItem) >= 0) remove(trailingItem);
+            add(trailingItem);
+        }
 
         setCurrentlyRetrieving(false);
         if (mRetrieveFinishedListener != null) {

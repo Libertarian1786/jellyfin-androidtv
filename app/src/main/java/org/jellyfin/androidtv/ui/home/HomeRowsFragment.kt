@@ -60,6 +60,10 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.api.sockets.subscribe
 import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.BaseItemDto
+import org.jellyfin.sdk.model.api.ItemFields
+import org.jellyfin.androidtv.ui.itemhandling.GridButtonBaseRowItem
+import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.sdk.model.api.CollectionType
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.LibraryChangedMessage
@@ -267,6 +271,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				GetItemsRequest(
 					parentId = collectionsView.id,
 					sortBy = setOf(ItemSortBy.SORT_NAME),
+					fields = setOf(ItemFields.PROVIDER_IDS),
 					enableTotalRecordCount = false,
 				)
 			} else {
@@ -274,6 +279,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					includeItemTypes = setOf(BaseItemKind.BOX_SET),
 					recursive = true,
 					sortBy = setOf(ItemSortBy.SORT_NAME),
+					fields = setOf(ItemFields.PROVIDER_IDS),
 					enableTotalRecordCount = false,
 				)
 			}
@@ -281,7 +287,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}.getOrDefault(emptyList())
 			.mapNotNull { item ->
 				val name = item.name ?: return@mapNotNull null
-				if (name.endsWith(" Collection")) null else item.id to name
+				// Franchise sets (TMDb collections like "The Space Odyssey Series", "DC Universe")
+				// carry a TMDb id; the themed bands deliberately don't.
+				if (name.endsWith(" Collection") || item.providerIds?.containsKey("Tmdb") == true) null else item.id to name
 			}
 
 		if (fresh.isNotEmpty() && fresh != cached) {
@@ -477,6 +485,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		) {
 			if (item !is BaseRowItem) return
 			if (row !is ListRow) return
+			val seeAll = (item as? GridButtonBaseRowItem)?.gridButton as? SeeAllButton
+			if (seeAll != null) {
+				navigationRepository.navigate(
+					Destinations.libraryBrowser(
+						BaseItemDto(id = seeAll.collectionId, type = BaseItemKind.BOX_SET, name = seeAll.collectionName, isFolder = true)
+					)
+				)
+				return
+			}
 			@Suppress("UNCHECKED_CAST")
 			itemLauncher.launch(item, row.adapter as MutableObjectAdapter<Any>, requireContext())
 		}

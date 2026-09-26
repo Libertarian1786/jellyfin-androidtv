@@ -6,6 +6,7 @@ import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.ChangeTriggerType
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.ui.browsing.BrowseRowDef
+import org.jellyfin.androidtv.ui.itemhandling.GridButtonBaseRowItem
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemFilter
@@ -128,7 +129,11 @@ class HomeFragmentHelper(
 			limit = ITEM_LIMIT_COLLECTION,
 		)
 
-		return HomeFragmentBrowseRowDefRow(BrowseRowDef(name, query, ITEM_LIMIT_COLLECTION))
+		// No paging: a shuffled band can't be paged without repeats. "See all" opens the whole band.
+		return HomeFragmentBrowseRowDefRow(
+			BrowseRowDef(name, query, 0),
+			GridButtonBaseRowItem(SeeAllButton(collectionId, name)),
+		)
 	}
 
 	companion object {
