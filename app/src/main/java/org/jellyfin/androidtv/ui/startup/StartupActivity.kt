@@ -16,6 +16,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -40,6 +41,7 @@ import org.jellyfin.androidtv.ui.startup.fragment.SelectServerFragment
 import org.jellyfin.androidtv.ui.startup.fragment.ServerFragment
 import org.jellyfin.androidtv.ui.startup.fragment.SplashFragment
 import org.jellyfin.androidtv.ui.startup.fragment.StartupToolbarFragment
+import org.jellyfin.androidtv.util.TailscaleHelper
 import org.jellyfin.androidtv.util.applyTheme
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
@@ -94,6 +96,28 @@ class StartupActivity : FragmentActivity() {
 
 		// Ensure basic permissions
 		networkPermissionsRequester.launch(arrayOf(Manifest.permission.INTERNET, Manifest.permission.ACCESS_NETWORK_STATE))
+
+		// The server is reached through Tailscale on these TVs, and Tailscale doesn't always come
+		// back on after a restart: ask it to connect before anything talks to the server.
+		lifecycleScope.launch {
+			val server = runCatching { startupViewModel.getLastServer() }.getOrNull()
+			TailscaleHelper.ensureConnected(this@StartupActivity, server?.address)
+		}
+
+		// Watchdog: on 9/26 the Travel TV sat on a blank startup screen (nothing shown, never
+		// moved on) after being reopened. If nothing has appeared after 12 seconds, carry on
+		// with the signed-in user, or show the server screen when nobody is signed in.
+		lifecycleScope.launch {
+			delay(12_000)
+			if (supportFragmentManager.findFragmentById(R.id.content_view) != null) return@launch
+			Timber.w("Startup screen still blank after 12 s (session state ${sessionRepository.state.value}), recovering")
+			if (sessionRepository.currentSession.value != null && userRepository.currentUser.value != null) {
+				openNextActivity()
+			} else {
+				val server = runCatching { startupViewModel.getLastServer() }.getOrNull()
+				if (server != null) showServer(server.id) else showServerSelection()
+			}
+		}
 	}
 
 	override fun onResume() {
