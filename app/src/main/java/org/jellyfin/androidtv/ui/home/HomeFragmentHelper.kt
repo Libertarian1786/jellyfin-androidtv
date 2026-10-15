@@ -129,7 +129,8 @@ class HomeFragmentHelper(
 			limit = ITEM_LIMIT_COLLECTION,
 		)
 
-		// No paging: a shuffled band can't be paged without repeats. "See all" opens the whole band.
+		// Opens with a random handful; scrolling to the end pulls in the rest of the band, shuffled and
+		// without repeats (ItemRowAdapter.retrieveShuffledRest). "See all" stays the last card.
 		return HomeFragmentBrowseRowDefRow(
 			BrowseRowDef(name, query, ITEM_LIMIT_COLLECTION),
 			GridButtonBaseRowItem(SeeAllButton(collectionId, name)),

@@ -472,8 +472,16 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
     }
 
     public void loadMoreItemsIfNeeded(int pos) {
-        // Rows ending in a "See all" card don't page: that card opens the rest
-        if (trailingItem != null) return;
+        // Rows ending in a "See all" card (themed bands) open with a random handful; scrolling near the
+        // end pulls the rest of the band in shuffled order, so every title can be reached in the row
+        if (trailingItem != null) {
+            boolean shuffled = mQuery != null && mQuery.getSortBy() != null && mQuery.getSortBy().contains(ItemSortBy.RANDOM);
+            if (shuffled && !restDone && !isCurrentlyRetrieving() && pos >= itemsLoaded - 15) {
+                notifyRetrieveStarted();
+                ItemRowAdapterHelperKt.retrieveShuffledRest(this, api.getValue(), mQuery, chunkSize > 0 ? chunkSize : 60);
+            }
+            return;
+        }
         if (fullyLoaded) {
             //context.getLogger().Debug("Row is fully loaded");
             return;
@@ -575,6 +583,9 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         notifyRetrieveStarted();
         lastFullRetrieve = Instant.now();
         itemsLoaded = 0;
+        restQueue = null;
+        restDone = false;
+        restGeneration++;
         switch (queryType) {
             case Items:
                 if (mQuery.getStartIndex() != null && mQuery.getLimit() != null) {
@@ -719,9 +730,37 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         trailingItem = item;
     }
 
+    @Nullable
+    public Object getTrailingItem() {
+        return trailingItem;
+    }
+
+    // Shuffled ids of the band's titles not yet in the row (built on first scroll to the end)
+    @Nullable private volatile java.util.ArrayDeque<java.util.UUID> restQueue = null;
+    private volatile boolean restDone = false;
+    // bumped by every full Retrieve(); a rest-batch started before it is dropped when it lands
+    private volatile int restGeneration = 0;
+
+    public int getRestGeneration() {
+        return restGeneration;
+    }
+
+    @Nullable
+    public java.util.ArrayDeque<java.util.UUID> getRestQueue() {
+        return restQueue;
+    }
+
+    public void setRestQueue(@Nullable java.util.ArrayDeque<java.util.UUID> queue) {
+        restQueue = queue;
+    }
+
+    public void setRestDone(boolean done) {
+        restDone = done;
+    }
+
     protected void notifyRetrieveFinished(@Nullable Exception exception) {
         if (exception != null) Timber.w(exception, "Failed to retrieve items");
-        if (exception == null && trailingItem != null && size() > 0) {
+        if (exception == null && trailingItem != null && size() > 0 && indexOf(trailingItem) != size() - 1) {
             if (indexOf(trailingItem) >= 0) remove(trailingItem);
             add(trailingItem);
         }

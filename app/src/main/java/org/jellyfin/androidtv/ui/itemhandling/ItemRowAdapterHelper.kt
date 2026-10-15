@@ -578,6 +578,8 @@ fun ItemRowAdapter.retrieveItems(
 			}
 
 			totalItems = response.totalRecordCount
+			// a reshuffled band starts over: keeping the old tail (titles loaded by scrolling) would repeat titles
+			if (startIndex == 0 && trailingItem != null) clear()
 			setItems(
 				items = response.items,
 				transform = { item, _ ->
@@ -593,6 +595,63 @@ fun ItemRowAdapter.retrieveItems(
 		}.fold(
 			onSuccess = { notifyRetrieveFinished() },
 			onFailure = { error -> notifyRetrieveFinished(error as? Exception) }
+		)
+	}
+}
+
+/**
+ * Themed bands open with a random handful; this appends the rest of the band, shuffled, one batch per
+ * call. The first call lists every id in the band (no images) and queues the ones not shown yet; each
+ * batch is then fetched by id, which the server returns in the order asked.
+ */
+fun ItemRowAdapter.retrieveShuffledRest(
+	api: ApiClient,
+	query: GetItemsRequest,
+	batchSize: Int,
+) {
+	val generation = restGeneration
+	ProcessLifecycleOwner.get().lifecycleScope.launch {
+		runCatching {
+			val queue = restQueue ?: run {
+				val shown = (0 until size()).mapNotNull { (get(it) as? BaseItemDtoBaseRowItem)?.baseItem?.id }.toSet()
+				val all = withContext(Dispatchers.IO) {
+					api.itemsApi.getItems(
+						GetItemsRequest(
+							parentId = query.parentId,
+							fields = emptySet(),
+							enableImages = false,
+							enableUserData = false,
+							enableTotalRecordCount = false,
+						)
+					).content.items
+				}.map { it.id }
+				// the row was reshuffled while this was loading: drop it, the new row starts over
+				if (generation != restGeneration) return@launch
+				java.util.ArrayDeque(all.filterNot { it in shown }.shuffled()).also { restQueue = it }
+			}
+
+			// ids leave the queue only once their batch has arrived, so a failed request loses nothing
+			val next = queue.take(batchSize)
+			if (next.isNotEmpty()) {
+				val items = withContext(Dispatchers.IO) {
+					api.itemsApi.getItems(
+						query.copy(parentId = null, ids = next, sortBy = null, sortOrder = null, startIndex = null, limit = null)
+					).content.items
+				}
+				if (generation != restGeneration) return@launch
+				repeat(next.size) { queue.pollFirst() }
+				// insert before the "See all" card so focus on it never jumps
+				val trailing = trailingItem
+				var at = if (trailing != null && indexOf(trailing) >= 0) indexOf(trailing) else size()
+				items.filterNot { IpadOnly.hides(it) }.forEach {
+					add(at++, BaseItemDtoBaseRowItem(it, preferParentThumb, isStaticHeight))
+				}
+				itemsLoaded = if (trailing != null && indexOf(trailing) >= 0) size() - 1 else size()
+			}
+			if (queue.isEmpty()) setRestDone(true)
+		}.fold(
+			onSuccess = { if (generation == restGeneration) notifyRetrieveFinished() },
+			onFailure = { error -> if (generation == restGeneration) notifyRetrieveFinished(error as? Exception) }
 		)
 	}
 }
