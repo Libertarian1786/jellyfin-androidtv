@@ -349,8 +349,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}
 	}
 
-	/** The "Shuffle" card: plays the named server playlist in its own order (a different show each time). */
-	private fun playPlaylist(name: String) {
+	/**
+	 * Plays the named server playlist in its own order (a different show each time). From the
+	 * "Shuffle" card it starts at a random point; from an episode card it starts with that episode.
+	 */
+	private fun playPlaylist(name: String, startWith: BaseItemDto? = null) {
 		lifecycleScope.launch {
 			val items = runCatching {
 				withContext(Dispatchers.IO) {
@@ -371,14 +374,49 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				emptyList()
 			}
 			if (!isAdded) return@launch
+			if (startWith != null) {
+				// The chosen episode first, then the playlist from just after it (wrapping round)
+				val at = items.indexOfFirst { it.id == startWith.id }
+				val queue = if (at >= 0) items.drop(at) + items.take(at) else listOf(startWith) + items
+				playbackLauncher.launch(requireContext(), keepPartsTogether(queue))
+				return@launch
+			}
 			if (items.isEmpty()) {
 				Toast.makeText(requireContext(), "\"$name\" is empty or missing", Toast.LENGTH_LONG).show()
 				return@launch
 			}
 			// Start somewhere new each press; the playlist's own order (a different show each time) is kept
 			val start = items.indices.random()
-			playbackLauncher.launch(requireContext(), items.drop(start) + items.take(start))
+			playbackLauncher.launch(requireContext(), keepPartsTogether(items.drop(start) + items.take(start)))
 		}
+	}
+
+	/**
+	 * Two-part Christmas episodes play back to back (David 2026-11-19): an episode is followed
+	 * straight away by the same show's next episode (same season, next number) when that one is in
+	 * the list too. Whole runs move together, placed where their first part falls in the queue.
+	 */
+	private fun keepPartsTogether(queue: List<BaseItemDto>): List<BaseItemDto> {
+		fun key(it: BaseItemDto) = Triple(it.seriesId, it.parentIndexNumber, it.indexNumber)
+		val byKey = queue.filter { it.seriesId != null && it.indexNumber != null }.associateBy(::key)
+		val placed = HashSet<java.util.UUID>()
+		val out = ArrayList<BaseItemDto>(queue.size)
+		for (item in queue) {
+			if (!placed.add(item.id)) continue
+			// a Part 2 whose Part 1 is in the list waits for Part 1 (unless it is the one picked to play first)
+			val prev = item.indexNumber?.let { byKey[Triple(item.seriesId, item.parentIndexNumber, it - 1)] }
+			if (out.isNotEmpty() && prev != null && prev.id !in placed) {
+				placed.remove(item.id)
+				continue
+			}
+			out.add(item)
+			var next = item.indexNumber?.let { byKey[Triple(item.seriesId, item.parentIndexNumber, it + 1)] }
+			while (next != null && placed.add(next.id)) {
+				out.add(next)
+				next = next.indexNumber?.let { byKey[Triple(next!!.seriesId, next!!.parentIndexNumber, it + 1)] }
+			}
+		}
+		return out
 	}
 
 	/** Back twice on the home screen: the first title of the row in focus. */
@@ -535,6 +573,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			val shuffle = (item as? GridButtonBaseRowItem)?.gridButton as? ShufflePlaylistButton
 			if (shuffle != null) {
 				playPlaylist(shuffle.playlistName)
+				return
+			}
+			// Christmas TV only (David 2026-11-19): an episode plays right away and is followed by
+			// another show's Christmas episode (the playlist order), not that show's next episode.
+			val bandPlaylist = ShufflePlaylistButton.PLAYLIST_FOR_BAND.entries
+				.firstOrNull { it.key.equals(row.headerItem?.name, ignoreCase = true) }?.value
+			val episode = item.baseItem?.takeIf { it.type == BaseItemKind.EPISODE }
+			if (bandPlaylist != null && episode != null) {
+				playPlaylist(bandPlaylist, startWith = episode)
 				return
 			}
 			val seeAll = (item as? GridButtonBaseRowItem)?.gridButton as? SeeAllButton

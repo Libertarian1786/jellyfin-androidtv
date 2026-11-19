@@ -289,7 +289,12 @@ public class CardPresenter extends Presenter {
                     cardHeight = !m.getStaticHeight() ? pHeight : sHeight;
                     cardWidth = (int) (ImageHelper.ASPECT_RATIO_7_9 * cardHeight);
                     mCardView.setMainImageDimensions(cardWidth, cardHeight);
-                    mDefaultCardImage = ContextCompat.getDrawable(mCardView.getContext(), R.drawable.tile_port_video);
+                    // the Christmas TV "Shuffle" card shows its Christmas tree instead of the video tile
+                    Integer buttonImage = m instanceof org.jellyfin.androidtv.ui.itemhandling.GridButtonBaseRowItem
+                            ? ((org.jellyfin.androidtv.ui.itemhandling.GridButtonBaseRowItem) m).getGridButton().getImageRes()
+                            : null;
+                    mDefaultCardImage = ContextCompat.getDrawable(mCardView.getContext(),
+                            buttonImage != null && buttonImage == R.drawable.ic_christmas_tree ? R.drawable.ic_christmas_tree : R.drawable.tile_port_video);
                     break;
                 case SeriesTimer:
                     cardHeight = !m.getStaticHeight() ? pHeight : sHeight;

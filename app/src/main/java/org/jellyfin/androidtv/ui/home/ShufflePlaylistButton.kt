@@ -9,7 +9,7 @@ import org.jellyfin.androidtv.ui.GridButton
  * Pressing it plays that playlist in its own order.
  */
 class ShufflePlaylistButton(val playlistName: String) :
-	GridButton(ID, "Shuffle", R.drawable.ic_shuffle) {
+	GridButton(ID, "Shuffle", R.drawable.ic_christmas_tree) {
 	companion object {
 		const val ID = 9_002
 
