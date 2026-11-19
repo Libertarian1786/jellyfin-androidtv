@@ -569,7 +569,20 @@ fun ItemRowAdapter.retrieveItems(
 	ProcessLifecycleOwner.get().lifecycleScope.launch {
 		runCatching {
 			val response = withContext(Dispatchers.IO) {
-				api.itemsApi.getItems(
+				if (startIndex == 0 && WeeklyShuffle.applies(query)) {
+					// Themed band: the week's fixed order, so going back to home doesn't reshuffle it
+					val order = WeeklyShuffle.order(api, query.parentId!!)
+					val head = order.take(batchSize)
+					val items = if (head.isEmpty()) emptyList() else api.itemsApi.getItems(
+						query.copy(parentId = null, ids = head, sortBy = null, sortOrder = null, startIndex = null, limit = null)
+					).content.items
+					val rank = head.withIndex().associate { it.value to it.index }
+					org.jellyfin.sdk.model.api.BaseItemDtoQueryResult(
+						items = items.sortedBy { rank[it.id] ?: Int.MAX_VALUE },
+						totalRecordCount = order.size,
+						startIndex = 0,
+					)
+				} else api.itemsApi.getItems(
 					query.copy(
 						startIndex = startIndex,
 						limit = batchSize,
@@ -614,20 +627,11 @@ fun ItemRowAdapter.retrieveShuffledRest(
 		runCatching {
 			val queue = restQueue ?: run {
 				val shown = (0 until size()).mapNotNull { (get(it) as? BaseItemDtoBaseRowItem)?.baseItem?.id }.toSet()
-				val all = withContext(Dispatchers.IO) {
-					api.itemsApi.getItems(
-						GetItemsRequest(
-							parentId = query.parentId,
-							fields = emptySet(),
-							enableImages = false,
-							enableUserData = false,
-							enableTotalRecordCount = false,
-						)
-					).content.items
-				}.map { it.id }
+				// the rest of the band in this week's order (same order every time the row is rebuilt)
+				val all = withContext(Dispatchers.IO) { WeeklyShuffle.order(api, query.parentId!!) }
 				// the row was reshuffled while this was loading: drop it, the new row starts over
 				if (generation != restGeneration) return@launch
-				java.util.ArrayDeque(all.filterNot { it in shown }.shuffled()).also { restQueue = it }
+				java.util.ArrayDeque(all.filterNot { it in shown }).also { restQueue = it }
 			}
 
 			// ids leave the queue only once their batch has arrived, so a failed request loses nothing

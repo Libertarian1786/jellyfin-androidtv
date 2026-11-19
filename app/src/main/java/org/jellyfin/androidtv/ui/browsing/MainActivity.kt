@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -11,6 +12,7 @@ import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
+import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -27,6 +29,7 @@ import org.jellyfin.androidtv.integration.LeanbackChannelWorker
 import org.jellyfin.androidtv.integration.McCoyUpdater
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
 import org.jellyfin.androidtv.ui.background.AppBackground
+import org.jellyfin.androidtv.ui.home.HomeRowsFragment
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationAction
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
@@ -39,6 +42,9 @@ import org.jellyfin.androidtv.util.isMediaSessionKeyEvent
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import timber.log.Timber
+
+// Presses further apart than this start a new count on the home screen
+private const val HOME_BACK_WINDOW_MS = 1_000L
 
 class MainActivity : FragmentActivity() {
 	private val navigationRepository by inject<NavigationRepository>()
@@ -57,8 +63,35 @@ class MainActivity : FragmentActivity() {
 	private val backPressedCallback = object : OnBackPressedCallback(true) {
 		override fun handleOnBackPressed() {
 			if (navigationRepository.canGoBack) navigationRepository.goBack()
-			else confirmExit()
+			else onFirstScreenBack()
 		}
+	}
+
+	// On the home screen (David 2026-11-19): one Back does nothing, two quick presses jump to the
+	// first title of the current row, three bring up "Stay / Exit". Any other first screen still
+	// asks on one press. (Holding Back anywhere = home, see handleHeldKey.)
+	private var homeBackPresses = 0
+	private var lastHomeBackAt = 0L
+
+	private fun onFirstScreenBack() {
+		val homeRows = findHomeRows() ?: return confirmExit()
+		val now = SystemClock.uptimeMillis()
+		homeBackPresses = if (now - lastHomeBackAt <= HOME_BACK_WINDOW_MS) homeBackPresses + 1 else 1
+		lastHomeBackAt = now
+		when (homeBackPresses) {
+			2 -> homeRows.scrollToRowStart()
+			3 -> {
+				homeBackPresses = 0
+				confirmExit()
+			}
+		}
+	}
+
+	private fun findHomeRows(): HomeRowsFragment? {
+		fun search(manager: FragmentManager): HomeRowsFragment? = manager.fragments.firstNotNullOfOrNull { fragment ->
+			fragment as? HomeRowsFragment ?: search(fragment.childFragmentManager)
+		}
+		return search(supportFragmentManager)
 	}
 
 	private var exitDialog: AlertDialog? = null

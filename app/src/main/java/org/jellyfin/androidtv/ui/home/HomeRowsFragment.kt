@@ -8,6 +8,7 @@ import androidx.leanback.app.RowsSupportFragment
 import androidx.leanback.widget.BaseGridView
 import androidx.leanback.widget.FocusHighlight
 import androidx.leanback.widget.ListRow
+import androidx.leanback.widget.ListRowPresenter
 import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.leanback.widget.OnItemViewSelectedListener
 import androidx.leanback.widget.Presenter
@@ -134,8 +135,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			if (!isActive) return@launch
 
 			// Curated home order. Recently Added (LATEST_MEDIA) is intentionally left out.
+			// No Next Up row: David doesn't want it (2026-11-18).
 			rows.add(helper.loadResumeVideo())            // Continue Watching
-			rows.add(helper.loadNextUp())                 // Next Up
 			rows.add(helper.loadMyList())                 // My List (hearted titles)
 
 			// Suggested for You — hydrated from the cached recommender id list. Bounded by a
@@ -148,7 +149,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				rows.add(HomeFragmentSuggestionsRow(requireContext().getString(R.string.suggested_for_you), suggestionItems))
 			}
 
-			rows.add(helper.loadRecentlyWatched())        // Recently watched
+			// No Recently watched row: David, 2026-11-19 ("no one needs" it).
 			rows.add(HomeFragmentViewsRow(small = true))  // My media (library shortcuts)
 			rows.add(helper.loadResumeAudio())            // Continue Listening (hidden when empty)
 			if (currentUser.policy?.enableLiveTvAccess == true) {
@@ -325,8 +326,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			collections
 		}
 		// Christmas is seasonal: lead with it in Nov/Dec, and pin it to the very bottom
-		// the rest of the year so the daily rotation can't surface it in July.
-		val (christmas, others) = rotated.partition { it.second.equals("Christmas", ignoreCase = true) }
+		// the rest of the year so the daily rotation can't surface it in July. Covers every
+		// "Christmas ..." row (Christmas Movies, Christmas TV), always movies first.
+		val (christmas, others) = rotated
+			.partition { it.second.startsWith("Christmas", ignoreCase = true) }
+			.let { (c, o) -> c.sortedBy { it.second.lowercase() } to o }
 		val ordered = when {
 			christmas.isEmpty() -> rotated
 			LocalDate.now().monthValue in CHRISTMAS_MONTHS -> christmas + others
@@ -339,6 +343,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		for (i in firstNewRow until rowsAdapter.size()) {
 			rowsAdapter.get(i)?.let(collectionRows::add)
 		}
+	}
+
+	/** Back twice on the home screen: the first title of the row in focus. */
+	fun scrollToRowStart() {
+		if ((adapter?.size() ?: 0) == 0) return
+		setSelectedPosition(selectedPosition.coerceAtLeast(0), true, ListRowPresenter.SelectItemViewHolderTask(0))
+		verticalGridView?.requestFocus()
 	}
 
 	override fun onKey(v: View?, keyCode: Int, event: KeyEvent?): Boolean {
