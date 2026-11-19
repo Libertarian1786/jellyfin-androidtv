@@ -735,6 +735,13 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         return trailingItem;
     }
 
+    // Extra card kept at the start of the row (e.g. "Shuffle" on the Christmas TV band)
+    @Nullable private Object leadingItem = null;
+
+    public void setLeadingItem(@Nullable Object item) {
+        leadingItem = item;
+    }
+
     // Shuffled ids of the band's titles not yet in the row (built on first scroll to the end)
     @Nullable private volatile java.util.ArrayDeque<java.util.UUID> restQueue = null;
     private volatile boolean restDone = false;
@@ -763,6 +770,10 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         if (exception == null && trailingItem != null && size() > 0 && indexOf(trailingItem) != size() - 1) {
             if (indexOf(trailingItem) >= 0) remove(trailingItem);
             add(trailingItem);
+        }
+        if (exception == null && leadingItem != null && size() > 0 && indexOf(leadingItem) != 0) {
+            if (indexOf(leadingItem) >= 0) remove(leadingItem);
+            add(0, leadingItem);
         }
 
         setCurrentlyRetrieving(false);

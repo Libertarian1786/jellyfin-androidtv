@@ -70,6 +70,9 @@ import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.jellyfin.sdk.model.api.UserDataChangedMessage
 import org.jellyfin.sdk.model.api.request.GetItemsRequest
+import android.widget.Toast
+import org.jellyfin.androidtv.data.repository.ItemRepository
+import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
 import org.koin.android.ext.android.inject
 import timber.log.Timber
 import java.time.LocalDate
@@ -99,6 +102,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val customMessageRepository by inject<CustomMessageRepository>()
 	private val navigationRepository by inject<NavigationRepository>()
 	private val itemLauncher by inject<ItemLauncher>()
+	private val playbackLauncher by inject<PlaybackLauncher>()
 	private val keyProcessor by inject<KeyProcessor>()
 
 	private val helper by lazy { HomeFragmentHelper(requireContext(), userRepository) }
@@ -345,6 +349,38 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}
 	}
 
+	/** The "Shuffle" card: plays the named server playlist in its own order (a different show each time). */
+	private fun playPlaylist(name: String) {
+		lifecycleScope.launch {
+			val items = runCatching {
+				withContext(Dispatchers.IO) {
+					val playlist = api.itemsApi.getItems(
+						GetItemsRequest(
+							includeItemTypes = setOf(BaseItemKind.PLAYLIST),
+							recursive = true,
+							searchTerm = name,
+						)
+					).content.items.firstOrNull { it.name.equals(name, ignoreCase = true) }
+						?: return@withContext emptyList()
+					api.itemsApi.getItems(
+						GetItemsRequest(parentId = playlist.id, fields = ItemRepository.itemFields)
+					).content.items
+				}
+			}.getOrElse {
+				Timber.w(it, "Could not load playlist %s", name)
+				emptyList()
+			}
+			if (!isAdded) return@launch
+			if (items.isEmpty()) {
+				Toast.makeText(requireContext(), "\"$name\" is empty or missing", Toast.LENGTH_LONG).show()
+				return@launch
+			}
+			// Start somewhere new each press; the playlist's own order (a different show each time) is kept
+			val start = items.indices.random()
+			playbackLauncher.launch(requireContext(), items.drop(start) + items.take(start))
+		}
+	}
+
 	/** Back twice on the home screen: the first title of the row in focus. */
 	fun scrollToRowStart() {
 		if ((adapter?.size() ?: 0) == 0) return
@@ -496,6 +532,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		) {
 			if (item !is BaseRowItem) return
 			if (row !is ListRow) return
+			val shuffle = (item as? GridButtonBaseRowItem)?.gridButton as? ShufflePlaylistButton
+			if (shuffle != null) {
+				playPlaylist(shuffle.playlistName)
+				return
+			}
 			val seeAll = (item as? GridButtonBaseRowItem)?.gridButton as? SeeAllButton
 			if (seeAll != null) {
 				navigationRepository.navigate(

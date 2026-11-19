@@ -131,9 +131,13 @@ class HomeFragmentHelper(
 
 		// Opens with a random handful; scrolling to the end pulls in the rest of the band, shuffled and
 		// without repeats (ItemRowAdapter.retrieveShuffledRest). "See all" stays the last card.
+		// A band with its own server playlist (Christmas TV) opens with a "Shuffle" card that plays it.
+		val shufflePlaylist = ShufflePlaylistButton.PLAYLIST_FOR_BAND.entries
+			.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
 		return HomeFragmentBrowseRowDefRow(
 			BrowseRowDef(name, query, ITEM_LIMIT_COLLECTION),
 			GridButtonBaseRowItem(SeeAllButton(collectionId, name)),
+			shufflePlaylist?.let { GridButtonBaseRowItem(ShufflePlaylistButton(it)) },
 		)
 	}
 
