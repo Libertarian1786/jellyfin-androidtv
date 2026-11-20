@@ -86,7 +86,11 @@ fun createDeviceProfile(
 	mediaTest = MediaCodecCapabilitiesTest(context),
 	maxBitrate = userPreferences.getMaxBitrate(),
 	isAC3Enabled = userPreferences[UserPreferences.ac3Enabled],
-	downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO,
+	// Bluetooth headphones/speakers can't take surround passed straight through (playback fails with
+	// "AudioTrack init failed"), so ask the server for stereo whenever sound is going to Bluetooth.
+	// Checked at every play, so switching back to the TV gets full 5.1 again (David 2026-11-19).
+	downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO ||
+		isBluetoothAudioOutput(context),
 	assDirectPlay = false,
 	pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
 	jellyfinTenEleven = serverVersion >= ServerVersion(10, 11, 0),
