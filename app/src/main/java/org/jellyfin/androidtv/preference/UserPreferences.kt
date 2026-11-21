@@ -7,6 +7,7 @@ import org.jellyfin.androidtv.preference.UserPreferences.Companion.screensaverIn
 import org.jellyfin.androidtv.preference.constant.AppTheme
 import org.jellyfin.androidtv.preference.constant.AudioBehavior
 import org.jellyfin.androidtv.preference.constant.ClockBehavior
+import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
 import org.jellyfin.androidtv.preference.constant.NextUpBehavior
 import org.jellyfin.androidtv.preference.constant.RatingType
 import org.jellyfin.androidtv.preference.constant.RefreshRateSwitchingBehavior
@@ -129,6 +130,16 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		 * Enable AC3
 		 */
 		var ac3Enabled = booleanPreference("pref_bitstream_ac3", true)
+
+		/** Always burn in subtitles when transcoding (upstream #4459). */
+		var subtitlesBurnDuringTranscode = booleanPreference("subtitles_burn_during_transcode", false)
+
+		/** HDR format overrides for the device profile (upstream #5743). */
+		var hdr10Override = enumPreference("hdr10_override", HdrOverrideMode.AUTO)
+		var hdr10PlusOverride = enumPreference("hdr10_plus_override", HdrOverrideMode.AUTO)
+		var doviProfile5Override = enumPreference("dovi_profile_5_override", HdrOverrideMode.AUTO)
+		var doviProfile7Override = enumPreference("dovi_profile_7_override", HdrOverrideMode.AUTO)
+		var doviProfile8Override = enumPreference("dovi_profile_8_override", HdrOverrideMode.AUTO)
 
 		/* Live TV */
 		/**

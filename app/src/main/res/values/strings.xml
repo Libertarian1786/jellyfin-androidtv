@@ -605,4 +605,15 @@
         <item quantity="one">%1$s album</item>
         <item quantity="other">%1$s albums</item>
     </plurals>
+    <string name="preference_hdr_overrides">HDR formats</string>
+    <string name="hdr_override_auto">Auto (device detection)</string>
+    <string name="hdr_override_enable">Enable</string>
+    <string name="hdr_override_disable">Disable</string>
+    <string name="hdr10_override">HDR10</string>
+    <string name="hdr10_plus_override">HDR10+</string>
+    <string name="dovi_profile_5">Dolby Vision Profile 5</string>
+    <string name="dovi_profile_7">Dolby Vision Profile 7</string>
+    <string name="dovi_profile_8">Dolby Vision Profile 8</string>
+    <string name="pref_burn_subtitles_when_transcoding">Burn in subtitles when transcoding</string>
+    <string name="pref_burn_subtitles_when_transcoding_description">Always burn subtitles into the video during transcoding. This can fix subtitle sync issues but disables subtitle customization.</string>
 </resources>

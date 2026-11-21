@@ -158,6 +158,7 @@ class PlaybackManager(
 					allowVideoStreamCopy = true,
 					allowAudioStreamCopy = true,
 					autoOpenLiveStream = true,
+					alwaysBurnInSubtitleWhenTranscoding = options.alwaysBurnInSubtitleWhenTranscoding,
 				)
 			).content
 		}

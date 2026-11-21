@@ -6,6 +6,8 @@ import org.jellyfin.androidtv.constant.AUTO_QUALITY
 import org.jellyfin.androidtv.constant.Codec
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.AudioBehavior
+import org.jellyfin.androidtv.preference.constant.HdrFormat
+import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
 import org.jellyfin.androidtv.ui.playback.AUTO_LOCAL_BPS
 import org.jellyfin.androidtv.ui.playback.AdaptiveBitrateState
 import org.jellyfin.androidtv.ui.playback.ServerLocality
@@ -78,6 +80,11 @@ private fun UserPreferences.getMaxBitrate(): Int {
 	return (maxBitrate * 1_000_000).roundToInt()
 }
 
+private fun UserPreferences.getHdrRangeTypesFor(mode: HdrOverrideMode): Set<String> =
+	HdrFormat.entries
+		.filter { this[it.preference] == mode }
+		.flatMapTo(mutableSetOf()) { it.rangeTypes }
+
 fun createDeviceProfile(
 	context: Context,
 	userPreferences: UserPreferences,
@@ -94,6 +101,8 @@ fun createDeviceProfile(
 	assDirectPlay = false,
 	pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
 	jellyfinTenEleven = serverVersion >= ServerVersion(10, 11, 0),
+	forceEnabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.ENABLE),
+	forceDisabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.DISABLE),
 )
 
 fun createDeviceProfile(
@@ -104,6 +113,8 @@ fun createDeviceProfile(
 	assDirectPlay: Boolean,
 	pgsDirectPlay: Boolean,
 	jellyfinTenEleven: Boolean,
+	forceEnabledHdr: Set<String> = emptySet(),
+	forceDisabledHdr: Set<String> = emptySet(),
 ) = buildDeviceProfile {
 	val allowedAudioCodecs = when {
 		downMixAudio -> downmixSupportedAudioCodecs
@@ -432,7 +443,7 @@ fun createDeviceProfile(
 
 			if (!mediaTest.supportsAV1HDR10()) add(VideoRangeType.HDR10.serialName)
 		}
-	}
+	} - forceEnabledHdr + forceDisabledHdr
 
 	// TODO Use VideoRangeType enum with Jellyfin 10.11 based SDK
 	val unsupportedRangeTypesHevc = buildSet {
@@ -460,7 +471,7 @@ fun createDeviceProfile(
 			add("DOVIWithHDR10Plus")
 			add("DOVIWithELHDR10Plus")
 		}
-	}
+	} - forceEnabledHdr + forceDisabledHdr
 
 	// Display
 	// Note: The codec profiles use a workaround to create correct behavior

@@ -9,6 +9,8 @@ import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.constant.getQualityProfiles
 import org.jellyfin.androidtv.preference.UserPreferences
+import org.jellyfin.androidtv.preference.constant.HdrFormat
+import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
 import org.jellyfin.androidtv.preference.constant.RefreshRateSwitchingBehavior
 import org.jellyfin.androidtv.preference.constant.ZoomMode
 import org.jellyfin.androidtv.ui.preference.custom.DurationSeekBarPreference
@@ -103,8 +105,25 @@ class PlaybackAdvancedPreferencesScreen : OptionsFragment() {
 			}
 
 			checkbox {
+				setTitle(R.string.pref_burn_subtitles_when_transcoding)
+				setContent(R.string.pref_burn_subtitles_when_transcoding_description)
+				bind(userPreferences, UserPreferences.subtitlesBurnDuringTranscode)
+			}
+
+			checkbox {
 				setTitle(R.string.pref_external_player)
 				bind(userPreferences, UserPreferences.useExternalPlayer)
+			}
+		}
+
+		category {
+			setTitle(R.string.preference_hdr_overrides)
+
+			for (format in HdrFormat.entries) {
+				enum<HdrOverrideMode> {
+					setTitle(format.nameRes)
+					bind(userPreferences, format.preference)
+				}
 			}
 		}
 
