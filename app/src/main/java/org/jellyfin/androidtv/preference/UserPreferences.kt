@@ -131,6 +131,9 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		 */
 		var ac3Enabled = booleanPreference("pref_bitstream_ac3", true)
 
+		/** Play a show's or film's theme song quietly on its details page. */
+		var themeMusicEnabled = booleanPreference("theme_music_enabled", true)
+
 		/** Always burn in subtitles when transcoding (upstream #4459). */
 		var subtitlesBurnDuringTranscode = booleanPreference("subtitles_burn_during_transcode", false)
 

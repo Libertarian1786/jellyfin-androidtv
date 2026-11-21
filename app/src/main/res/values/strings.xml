@@ -616,4 +616,6 @@
     <string name="dovi_profile_8">Dolby Vision Profile 8</string>
     <string name="pref_burn_subtitles_when_transcoding">Burn in subtitles when transcoding</string>
     <string name="pref_burn_subtitles_when_transcoding_description">Always burn subtitles into the video during transcoding. This can fix subtitle sync issues but disables subtitle customization.</string>
+    <string name="pref_theme_music">Theme music</string>
+    <string name="pref_theme_music_description">Play the theme song quietly on show and film pages</string>
 </resources>

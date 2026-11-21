@@ -61,6 +61,12 @@ class PlaybackAdvancedPreferencesScreen : OptionsFragment() {
 				setTitle(R.string.lbl_tv_queuing)
 				bind(userPreferences, UserPreferences.mediaQueuingEnabled)
 			}
+
+			checkbox {
+				setTitle(R.string.pref_theme_music)
+				setContent(R.string.pref_theme_music_description)
+				bind(userPreferences, UserPreferences.themeMusicEnabled)
+			}
 		}
 
 		category {

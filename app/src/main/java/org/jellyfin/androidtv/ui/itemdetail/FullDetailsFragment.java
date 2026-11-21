@@ -151,6 +151,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     private final Lazy<KeyProcessor> keyProcessor = inject(KeyProcessor.class);
     final Lazy<PlaybackHelper> playbackHelper = inject(PlaybackHelper.class);
     private final Lazy<ImageHelper> imageHelper = inject(ImageHelper.class);
+    private ThemeMusicPlayer themeMusic;
     private final Lazy<InteractionTrackerViewModel> interactionTracker = inject(InteractionTrackerViewModel.class);
 
     @Nullable
@@ -226,6 +227,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     @Override
     public void onResume() {
         super.onResume();
+        if (mBaseItem != null) playThemeMusic();
 
         ClockBehavior clockBehavior = userPreferences.getValue().get(UserPreferences.Companion.getClockBehavior());
         if (clockBehavior == ClockBehavior.ALWAYS || clockBehavior == ClockBehavior.IN_MENUS) {
@@ -278,10 +280,17 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
         }, 750);
     }
 
+    private void playThemeMusic() {
+        if (!userPreferences.getValue().get(UserPreferences.Companion.getThemeMusicEnabled())) return;
+        if (themeMusic == null) themeMusic = new ThemeMusicPlayer(requireContext().getApplicationContext(), api.getValue());
+        themeMusic.play(getViewLifecycleOwner(), mBaseItem);
+    }
+
     @Override
     public void onPause() {
         super.onPause();
         stopClock();
+        if (themeMusic != null) themeMusic.stop();
     }
 
     @Override
@@ -489,6 +498,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
 
         mBaseItem = item;
         backgroundService.getValue().setBackground(item);
+        playThemeMusic();
         if (mBaseItem != null) {
             if (mChannelId != null) {
                 mBaseItem = JavaCompat.copyWithParentId(mBaseItem, mChannelId);
